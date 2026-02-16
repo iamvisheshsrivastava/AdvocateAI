@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'config.dart';
 
 Future<Map<String, dynamic>?> loginUser(String email, String password) async {
-  final url = Uri.parse("http://localhost:8000/login");
+  final url = Uri.parse("${ApiConfig.baseUrl}/login");
 
   final response = await http.post(
     url,

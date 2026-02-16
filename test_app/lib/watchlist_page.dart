@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'config.dart';
 
 class WatchListPage extends StatefulWidget {
   final int userId;
@@ -24,11 +25,11 @@ class _WatchListPageState extends State<WatchListPage> {
 
   Future<void> loadData() async {
     final watchRes = await http.get(
-      Uri.parse("http://localhost:8000/watchlist/${widget.userId}"),
+      Uri.parse("${ApiConfig.baseUrl}/watchlist/${widget.userId}"),
     );
 
     final proRes = await http.get(
-      Uri.parse("http://localhost:8000/professionals/${widget.userId}"),
+      Uri.parse("${ApiConfig.baseUrl}/professionals/${widget.userId}"),
     );
 
     if (watchRes.statusCode == 200 && proRes.statusCode == 200) {
@@ -41,7 +42,7 @@ class _WatchListPageState extends State<WatchListPage> {
   
   Future<void> addToWatchlist() async {
     await http.post(
-      Uri.parse("http://localhost:8000/watchlist/add"),
+      Uri.parse("${ApiConfig.baseUrl}/watchlist/add"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "user_id": widget.userId,

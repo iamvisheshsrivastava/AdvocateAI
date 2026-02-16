@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'watchlist_page.dart';
 import 'notifications_page.dart';
-
+import 'config.dart';
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -67,7 +67,7 @@ class _HomePageState extends State<HomePage> {
     scrollToBottom();
     messageController.clear();
 
-    final url = Uri.parse("http://localhost:8000/chat");
+    final url = Uri.parse("${ApiConfig.baseUrl}/chat");
 
     final response = await http.post(
       url,
