@@ -1,30 +1,51 @@
 # AdvocateAI
 
-AdvocateAI is a legal-tech app to help users find the right lawyer quickly using AI-based semantic search.
+AdvocateAI is a legal-tech platform that helps users discover the most relevant lawyer quickly using AI-powered semantic search.
 
-## Project Structure
+Instead of only keyword matching, AdvocateAI understands user intent from natural language questions and recommends suitable legal professionals by combining expertise context, reviews, ratings, and city data.
 
-- `backend/` — FastAPI + PostgreSQL API
-- `test_app/` — Flutter web/mobile app
+## Live Access
 
-## Main Features
+- Public URL: http://159.89.163.233/
+- Deployment: Hosted on a DigitalOcean server
 
-- User Sign Up / Login
-- Session persistence (stay logged in after refresh)
-- AI chat to find relevant legal professionals
-- Watchlist management
-- Clean landing page + auth flow
+## What It Does
+
+- User authentication (Sign Up / Login)
+- Persistent session handling (users stay logged in after refresh)
+- AI chat-based legal professional discovery
+- Watchlist support for shortlisted professionals
+- Clean landing page and user flow for web/mobile
+
+## Current Scope
+
+- The current dataset is focused on Germany-based lawyers.
+- Expansion to additional countries, legal domains, and richer digital legal workflows is in progress.
+
+## Planned Improvements
+
+I am actively planning to add more features, including:
+
+- Stronger profile filtering (practice area, language, availability)
+- Better personalization and recommendation quality
+- Improved production security (password hashing, stricter CORS, env-based credentials)
+- Broader legal coverage beyond the current Germany-first scope
 
 ## Tech Stack
 
-- **Frontend:** Flutter
-- **Backend:** FastAPI (Python)
-- **Database:** PostgreSQL
-- **AI:** Sentence Transformers + Gemini API
+- Frontend: Flutter
+- Backend: FastAPI (Python)
+- Database: PostgreSQL
+- AI: Sentence Transformers + Gemini API
+
+## Project Structure
+
+- `backend/` — FastAPI APIs, data ingestion, embeddings, schema
+- `test_app/` — Flutter web/mobile frontend
 
 ## Quick Start
 
-### 1) Backend
+### Backend
 
 ```bash
 cd backend
@@ -40,21 +61,16 @@ GEMINI_API_KEY=your_key
 GOOGLE_API_KEY=your_key
 ```
 
-Initialize DB and run setup scripts:
+Run setup + backend:
 
 ```bash
 psql -U postgres -d postgres -f schema.sql
 python fetch_professionals.py
 python generate_embeddings.py
-```
-
-Start backend:
-
-```bash
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2) Frontend
+### Frontend
 
 ```bash
 cd test_app
@@ -62,17 +78,17 @@ flutter pub get
 flutter run -d chrome
 ```
 
-## API (Main)
+## Main API Endpoints
 
-- `POST /signup` — create account
-- `POST /login` — login user
-- `POST /chat` — semantic legal search chat
-- `GET /watchlist/{user_id}` — user watchlist
-- `GET /professionals/{user_id}` — available professionals
-- `POST /watchlist/add` — add professionals to watchlist
+- `POST /signup`
+- `POST /login`
+- `POST /chat`
+- `GET /watchlist/{user_id}`
+- `GET /professionals/{user_id}`
+- `POST /watchlist/add`
 
-## Notes
+## Contribute / Suggestions
 
-- Current setup is development-focused.
-- Move DB credentials and all secrets to environment variables for production.
-- Restrict CORS and use proper password hashing before production.
+If you would like to contribute or share suggestions, feel free to email:
+
+**contact@visheshsrivastava.com**
