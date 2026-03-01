@@ -1,4 +1,4 @@
-# AdvocateAI
+# AdvocateAI 
 
 An intelligent platform that connects users with legal professionals (lawyers, advocates, consultants) using AI-powered semantic matching. The system uses embeddings to understand user queries and recommend the most relevant legal professionals based on expertise, location, and ratings.
 
