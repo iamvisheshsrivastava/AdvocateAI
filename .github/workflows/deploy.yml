@@ -1,0 +1,58 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Setup Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+
+      # 3️⃣ Build Flutter Web
+      - name: Build Flutter Web
+        run: |
+          cd test_app
+          flutter pub get
+          flutter build web
+
+      # 4️⃣ Setup SSH
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 159.89.163.233 >> ~/.ssh/known_hosts
+
+      # 5️⃣ Deploy to Droplet
+      - name: Deploy to Droplet
+        run: |
+          ssh root@159.89.163.233 << 'EOF'
+          
+            cd /root/AdvocateAI
+            git pull origin main
+
+            # ---- BACKEND ----
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt || true
+            systemctl restart advocateai || true
+
+            # ---- FRONTEND ----
+            rm -rf /var/www/html/*
+            exit
+          EOF
+
+          # Copy built frontend files to server
+          scp -r test_app/build/web/* root@159.89.163.233:/var/www/html/
