@@ -4,15 +4,17 @@ import 'package:flutter/material.dart';
 import 'home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
+import 'signup_page.dart';
+import 'landing_page.dart';
 
-Future<Map<String, dynamic>?> loginUser(String email, String password) async {
+Future<Map<String, dynamic>?> loginUser(String username, String password) async {
   final url = Uri.parse("${ApiConfig.baseUrl}/login");
 
   final response = await http.post(
     url,
     headers: {"Content-Type": "application/json"},
     body: jsonEncode({
-      "email": email,
+      "username": username,
       "password": password,
     }),
   );
@@ -34,6 +36,29 @@ class LoginPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Future<void> handleLogin() async {
+      final username = emailController.text;
+      final password = passwordController.text;
+
+      final data = await loginUser(username, password);
+
+      if (data != null) {
+        final prefs = await SharedPreferences.getInstance();
+
+        await prefs.setInt("user_id", data["user_id"]);
+        await prefs.setString("user_email", data["email"] ?? "");
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => HomePage()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Invalid login")),
+        );
+      }
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF2F4F7),
       body: Center(
@@ -54,6 +79,19 @@ class LoginPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LandingPage()),
+                    );
+                  },
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text("Back to Home"),
+                ),
+              ),
               const Text(
                 "AdvocateAI",
                 style: TextStyle(
@@ -72,9 +110,11 @@ class LoginPage extends StatelessWidget {
               // Email field
               TextField(
                 controller: emailController,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                 decoration: InputDecoration(
-                  hintText: "Email",
-                  prefixIcon: const Icon(Icons.email),
+                  hintText: "Username",
+                  prefixIcon: const Icon(Icons.person),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -86,6 +126,8 @@ class LoginPage extends StatelessWidget {
               TextField(
                 controller: passwordController,
                 obscureText: true,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => handleLogin(),
                 decoration: InputDecoration(
                   hintText: "Password",
                   prefixIcon: const Icon(Icons.lock),
@@ -101,28 +143,7 @@ class LoginPage extends StatelessWidget {
                 width: double.infinity,
                 height: 45,
                 child: ElevatedButton(
-                  onPressed: () async {
-                    final email = emailController.text;
-                    final password = passwordController.text;
-
-                    final data = await loginUser(email, password);
-
-                    if (data != null) {
-                      final prefs = await SharedPreferences.getInstance();
-
-                      await prefs.setInt("user_id", data["user_id"]);
-                      await prefs.setString("user_email", email);
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => HomePage()),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Invalid login")),
-                      );
-                    }
-                  },
+                  onPressed: handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     shape: RoundedRectangleBorder(
@@ -138,16 +159,29 @@ class LoginPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // Sign up text (no functionality)
+              // Sign up text
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Text("Don’t have an account? "),
-                  Text(
-                    "Sign up",
-                    style: TextStyle(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.bold,
+                children: [
+                  const Text("Don’t have an account? "),
+                  GestureDetector(
+                    onTap: () async {
+                      final createdUsername = await Navigator.push<String>(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SignupPage()),
+                      );
+
+                      if (createdUsername != null && createdUsername.isNotEmpty) {
+                        emailController.text = createdUsername;
+                        passwordController.clear();
+                      }
+                    },
+                    child: const Text(
+                      "Sign up",
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],

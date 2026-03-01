@@ -6,6 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'watchlist_page.dart';
 import 'notifications_page.dart';
 import 'config.dart';
+import 'login_page.dart';
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -53,6 +54,19 @@ class _HomePageState extends State<HomePage> {
         "text": "Hi $userEmail, how can I help you today?"
       });
     });
+  }
+
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => LoginPage()),
+      (route) => false,
+    );
   }
 
   Future<void> sendMessage({String? presetText}) async {
@@ -209,6 +223,16 @@ class _HomePageState extends State<HomePage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: logout,
+                                  icon: const Icon(Icons.logout),
+                                  label: const Text('Logout'),
+                                ),
+                              ],
+                            ),
                             const SizedBox(height: 6),
                             const Text(
                               'Find exactly what you\'re looking for,\n in seconds.',

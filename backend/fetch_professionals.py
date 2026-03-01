@@ -90,7 +90,7 @@ def run_full_ingestion():
     for city in CITIES:
         try:
             fetch_city_lawyers(city)
-            time.sleep(1)  # avoid rate limits
+            time.sleep(1) 
         except Exception as e:
             print(f"Error in city {city}: {e}")
 

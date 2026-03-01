@@ -28,26 +28,90 @@ conn = psycopg2.connect(
     port=5432
 )
 
+
+def ensure_users_password_column():
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
+    conn.commit()
+    cur.close()
+
+
+ensure_users_password_column()
+
 # Request model
 class LoginRequest(BaseModel):
-    email: str
+    username: str
+    password: str
+
+
+class SignupRequest(BaseModel):
+    username: str
     password: str
 
 
 @app.post("/login")
 def login(data: LoginRequest):
+    username = data.username.strip()
+    password = data.password.strip()
+
+    if not username or not password:
+        return {"success": False}
+
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, email FROM users WHERE email = %s AND password = %s",
-        (data.email, data.password)
+        """
+        SELECT id, name, email
+        FROM users
+        WHERE (LOWER(name) = LOWER(%s) OR LOWER(email) = LOWER(%s))
+          AND password = %s
+        """,
+        (username, username, password)
     )
     user = cur.fetchone()
     cur.close()
 
     if user:
-        return {"success": True, "user_id": user[0], "email": user[1]}
+        return {
+            "success": True,
+            "user_id": user[0],
+            "username": user[1],
+            "email": user[2],
+        }
     else:
         return {"success": False}
+
+
+@app.post("/signup")
+def signup(data: SignupRequest):
+    username = data.username.strip()
+    password = data.password.strip()
+
+    if not username or not password:
+        return {"success": False, "message": "Username and password are required."}
+
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE LOWER(name) = LOWER(%s)", (username,))
+    existing = cur.fetchone()
+
+    if existing:
+        cur.close()
+        return {"success": False, "message": "Username already exists."}
+
+    email = f"{username}@advocateai.local"
+
+    cur.execute(
+        """
+        INSERT INTO users (name, email, password)
+        VALUES (%s, %s, %s)
+        RETURNING id
+        """,
+        (username, email, password)
+    )
+    user_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+
+    return {"success": True, "user_id": user_id, "username": username}
 
 
 class ChatRequest(BaseModel):
