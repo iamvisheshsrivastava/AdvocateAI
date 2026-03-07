@@ -44,9 +44,13 @@ class LoginPage extends StatelessWidget {
 
       if (data != null) {
         final prefs = await SharedPreferences.getInstance();
+        final expiresAt = DateTime.now()
+            .add(const Duration(minutes: 5))
+            .millisecondsSinceEpoch;
 
         await prefs.setInt("user_id", data["user_id"]);
         await prefs.setString("user_email", data["email"] ?? "");
+        await prefs.setInt("session_expires_at", expiresAt);
 
         Navigator.pushReplacement(
           context,

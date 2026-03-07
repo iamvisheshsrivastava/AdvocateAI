@@ -7,6 +7,7 @@ import 'watchlist_page.dart';
 import 'notifications_page.dart';
 import 'config.dart';
 import 'login_page.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -14,7 +15,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final TextEditingController messageController = TextEditingController();
   final ScrollController scrollController = ScrollController();
 
@@ -26,7 +27,23 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    loadUser();
+    WidgetsBinding.instance.addObserver(this);
+    _validateSessionAndLoadUser();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    messageController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _enforceSessionTimeout();
+    }
   }
 
   void scrollToBottom() {
@@ -46,6 +63,13 @@ class _HomePageState extends State<HomePage> {
     final email = prefs.getString("user_email") ?? "User";
     final id = prefs.getInt("user_id");
 
+    if (id == null) {
+      await logout();
+      return;
+    }
+
+    if (!mounted) return;
+
     setState(() {
       userEmail = email;
       userId = id;
@@ -54,6 +78,35 @@ class _HomePageState extends State<HomePage> {
         "text": "Hi $userEmail, how can I help you today?"
       });
     });
+  }
+
+  Future<void> _validateSessionAndLoadUser() async {
+    final sessionExpired = await _isSessionExpired();
+    if (sessionExpired) {
+      await logout();
+      return;
+    }
+
+    await loadUser();
+  }
+
+  Future<void> _enforceSessionTimeout() async {
+    final sessionExpired = await _isSessionExpired();
+    if (sessionExpired) {
+      await logout();
+    }
+  }
+
+  Future<bool> _isSessionExpired() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt("user_id");
+    final expiresAt = prefs.getInt("session_expires_at");
+
+    if (userId == null || expiresAt == null) {
+      return true;
+    }
+
+    return DateTime.now().millisecondsSinceEpoch >= expiresAt;
   }
 
   Future<void> logout() async {

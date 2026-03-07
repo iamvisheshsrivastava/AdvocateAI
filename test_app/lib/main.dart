@@ -12,7 +12,22 @@ class MyApp extends StatelessWidget {
 
   Future<bool> _hasActiveSession() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt("user_id") != null;
+    final userId = prefs.getInt("user_id");
+    final expiresAt = prefs.getInt("session_expires_at");
+
+    if (userId == null || expiresAt == null) {
+      return false;
+    }
+
+    final isExpired = DateTime.now().millisecondsSinceEpoch >= expiresAt;
+    if (isExpired) {
+      await prefs.remove("user_id");
+      await prefs.remove("user_email");
+      await prefs.remove("session_expires_at");
+      return false;
+    }
+
+    return true;
   }
 
   @override
