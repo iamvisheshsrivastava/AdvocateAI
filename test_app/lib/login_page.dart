@@ -1,11 +1,11 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
 import 'signup_page.dart';
 import 'landing_page.dart';
+import 'role_home_page.dart';
 
 Future<Map<String, dynamic>?> loginUser(String username, String password) async {
   final url = Uri.parse("${ApiConfig.baseUrl}/login");
@@ -50,13 +50,21 @@ class LoginPage extends StatelessWidget {
 
         await prefs.setInt("user_id", data["user_id"]);
         await prefs.setString("user_email", data["email"] ?? "");
+        await prefs.setString("user_role", data["role"]?.toString() ?? "client");
         await prefs.setInt("session_expires_at", expiresAt);
+
+        if (!context.mounted) return;
 
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => HomePage()),
+          MaterialPageRoute(
+            builder: (_) => RoleHomePage(
+              role: data["role"]?.toString() ?? "client",
+            ),
+          ),
         );
       } else {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Invalid login")),
         );

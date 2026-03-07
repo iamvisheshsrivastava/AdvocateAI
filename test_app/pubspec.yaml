@@ -14,6 +14,7 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.2.2
   flutter_markdown: ^0.6.18
+  file_picker: ^8.1.7
 
 dev_dependencies:
   flutter_test:

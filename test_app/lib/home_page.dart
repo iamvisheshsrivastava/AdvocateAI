@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'watchlist_page.dart';
 import 'notifications_page.dart';
 import 'config.dart';
 import 'login_page.dart';
+import 'premium_page.dart';
+import 'client_cases_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -23,6 +26,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int? userId;
   bool isTyping = false;
   List<Map<String, String>> messages = [];
+  Map<String, dynamic>? latestCaseAnalysis;
+  List<dynamic> latestSuggestedLawyers = [];
+  String lastUserProblem = "";
+  bool showCaseAnalysis = false;
+  bool isUploadingDocument = false;
+  Map<String, dynamic>? latestDocumentAnalysis;
+  List<dynamic> latestDocumentRecommendedLawyers = [];
 
   @override
   void initState() {
@@ -126,6 +136,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final text = presetText ?? messageController.text.trim();
     if (text.isEmpty) return;
 
+    lastUserProblem = text;
+
     setState(() {
       messages.add({"role": "user", "text": text});
       isTyping = true;
@@ -146,7 +158,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      reply = data["response"];
+      reply = (data["response"] ?? "Error getting response").toString();
+
+      final analysis = data["analysis"];
+      if (analysis is Map<String, dynamic>) {
+        final canPostCase = data["can_post_case"] == true;
+        if (canPostCase) {
+          latestCaseAnalysis = analysis;
+          showCaseAnalysis = true;
+        } else {
+          latestCaseAnalysis = null;
+          showCaseAnalysis = false;
+        }
+      } else {
+        latestCaseAnalysis = null;
+        showCaseAnalysis = false;
+      }
+
+      final suggestedLawyers = data["suggested_lawyers"];
+      if (suggestedLawyers is List) {
+        latestSuggestedLawyers = suggestedLawyers;
+      } else {
+        latestSuggestedLawyers = [];
+      }
     }
 
     setState(() {
@@ -155,6 +189,84 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
 
     scrollToBottom();
+  }
+
+  Future<void> _uploadAndAnalyzeDocument() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+
+    if (picked == null || picked.files.isEmpty) return;
+
+    final file = picked.files.first;
+    if ((file.bytes == null || file.bytes!.isEmpty) && (file.path == null || file.path!.isEmpty)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read selected file.')),
+      );
+      return;
+    }
+
+    setState(() {
+      isUploadingDocument = true;
+    });
+
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiConfig.baseUrl}/documents/analyze'),
+      );
+
+      if (file.bytes != null && file.bytes!.isNotEmpty) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            file.bytes!,
+            filename: file.name,
+          ),
+        );
+      } else if (file.path != null) {
+        request.files.add(await http.MultipartFile.fromPath('file', file.path!));
+      }
+
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          latestDocumentAnalysis = {
+            'document_type': data['document_type'] ?? 'Unknown',
+            'legal_area': data['legal_area'] ?? 'General Legal',
+            'key_dates': data['key_dates'] ?? <dynamic>[],
+            'summary': data['summary'] ?? '',
+            'potential_issue': data['potential_issue'] ?? '',
+            'recommended_action': data['recommended_action'] ?? '',
+          };
+          final lawyers = data['recommended_lawyers'];
+          latestDocumentRecommendedLawyers = lawyers is List ? lawyers : [];
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Document analysis failed.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error uploading document.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isUploadingDocument = false;
+        });
+      }
+    }
   }
 
   @override
@@ -208,6 +320,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onTap: () {},
                     ),
                     ListTile(
+                      leading: const Icon(Icons.post_add, color: Colors.blue),
+                      title: const Text('Create Case'),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CreateCasePage(),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.recommend, color: Colors.blue),
+                      title: const Text('Recommended Lawyers'),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const RecommendedLawyersPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.folder_open, color: Colors.blue),
+                      title: const Text('My Cases'),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const MyCasesPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
                       leading: const Icon(Icons.book, color: Colors.blue),
                       title: const Text('WatchList'),
                       contentPadding: EdgeInsets.zero,
@@ -236,18 +387,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       },
                     ),
                     const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEF7FF),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: const [
-                          Icon(Icons.upgrade, color: Color(0xFF1E88E5)),
-                          SizedBox(width: 10),
-                          Expanded(child: Text('Become Pro Access')),
-                        ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const PremiumPage(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.upgrade),
+                        label: const Text('Get Premium'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E88E5),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -314,6 +475,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 _buildActionChip(Icons.email, 'Lawyer with highest reviews in Hamburg'),
                               ],
                             ),
+
+                            if (showCaseAnalysis && latestCaseAnalysis != null) ...[
+                              const SizedBox(height: 16),
+                              _buildCaseAnalysisCard(context),
+                            ],
+
+                            if (latestDocumentAnalysis != null) ...[
+                              const SizedBox(height: 16),
+                              _buildDocumentAnalysisCard(context),
+                            ],
 
                             SizedBox(
                               height: 300,
@@ -405,9 +576,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
                             // small helper chips below
                             Row(
-                              children: const [
-                                Chip(label: Text('Attach')),
-                                SizedBox(width: 8),
+                              children: [
+                                ActionChip(
+                                  avatar: isUploadingDocument
+                                      ? const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.attach_file, size: 18),
+                                  label: Text(
+                                    isUploadingDocument ? 'Analyzing...' : 'Attach',
+                                  ),
+                                  onPressed: isUploadingDocument ? null : _uploadAndAnalyzeDocument,
+                                ),
+                                const SizedBox(width: 8),
                               ],
                             ),
                           ],
@@ -439,6 +622,192 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onPressed: () {
         sendMessage(presetText: label);
       },
+    );
+  }
+
+  Widget _buildCaseAnalysisCard(BuildContext context) {
+    final analysis = latestCaseAnalysis ?? <String, dynamic>{};
+    final legalArea = (analysis['legal_area'] ?? 'N/A').toString();
+    final issueType = (analysis['issue_type'] ?? 'N/A').toString();
+    final location = (analysis['location'] ?? 'Unknown').toString();
+    final urgency = (analysis['urgency'] ?? 'Medium').toString();
+    final summary = (analysis['summary'] ?? '').toString();
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.blue.shade100),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.analytics_outlined, color: Color(0xFF1E88E5)),
+                SizedBox(width: 8),
+                Text(
+                  'Case Analysis',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text('Legal Area: $legalArea'),
+            const SizedBox(height: 4),
+            Text('Issue Type: $issueType'),
+            const SizedBox(height: 4),
+            Text('Location: $location'),
+            const SizedBox(height: 4),
+            Text('Urgency: $urgency'),
+            if (summary.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                summary,
+                style: const TextStyle(height: 1.35),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RecommendedLawyersPage(
+                          initialLawyers: latestSuggestedLawyers,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.people_alt_outlined),
+                  label: const Text('Find Lawyers'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CreateCasePage(
+                          initialTitle: issueType == 'N/A' || issueType.isEmpty
+                              ? 'Legal assistance request'
+                              : issueType,
+                          initialDescription: lastUserProblem,
+                          initialCity: location == 'Unknown' ? '' : location,
+                          initialLegalArea: legalArea == 'N/A' ? '' : legalArea,
+                          initialIssueType: issueType == 'N/A' ? '' : issueType,
+                          initialUrgency: urgency,
+                          initialAiSummary: summary,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.post_add),
+                  label: const Text('Post Case'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentAnalysisCard(BuildContext context) {
+    final analysis = latestDocumentAnalysis ?? <String, dynamic>{};
+    final documentType = (analysis['document_type'] ?? 'Unknown').toString();
+    final legalArea = (analysis['legal_area'] ?? 'General Legal').toString();
+    final summary = (analysis['summary'] ?? '').toString();
+    final recommendedAction = (analysis['recommended_action'] ?? '').toString();
+    final potentialIssue = (analysis['potential_issue'] ?? '').toString();
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.green.shade100),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.description_outlined, color: Color(0xFF2E7D32)),
+                SizedBox(width: 8),
+                Text(
+                  'Document Analysis',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text('Document Type: $documentType'),
+            const SizedBox(height: 4),
+            Text('Legal Area: $legalArea'),
+            if (potentialIssue.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Potential Issue: $potentialIssue'),
+            ],
+            if (summary.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(summary, style: const TextStyle(height: 1.35)),
+            ],
+            if (recommendedAction.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Recommended Action: $recommendedAction'),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RecommendedLawyersPage(
+                          initialLawyers: latestDocumentRecommendedLawyers,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.people_alt_outlined),
+                  label: const Text('Find Lawyers'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CreateCasePage(
+                          initialTitle: potentialIssue.isEmpty
+                              ? 'Legal document issue'
+                              : potentialIssue,
+                          initialDescription: summary,
+                          initialLegalArea: legalArea,
+                          initialIssueType: potentialIssue,
+                          initialAiSummary: summary,
+                          initialUrgency: 'Medium',
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.save_as_outlined),
+                  label: const Text('Save as Case'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

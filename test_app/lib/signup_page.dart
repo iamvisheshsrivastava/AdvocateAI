@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
 
-Future<Map<String, dynamic>> signupUser(String username, String password) async {
+Future<Map<String, dynamic>> signupUser(String username, String password, String role) async {
   final url = Uri.parse("${ApiConfig.baseUrl}/signup");
 
   final response = await http.post(
@@ -12,6 +12,7 @@ Future<Map<String, dynamic>> signupUser(String username, String password) async 
     body: jsonEncode({
       "username": username,
       "password": password,
+      "role": role,
     }),
   );
 
@@ -36,6 +37,7 @@ class _SignupPageState extends State<SignupPage> {
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController = TextEditingController();
+  String selectedRole = 'client';
 
   bool isSubmitting = false;
 
@@ -62,7 +64,7 @@ class _SignupPageState extends State<SignupPage> {
       isSubmitting = true;
     });
 
-    final result = await signupUser(username, password);
+    final result = await signupUser(username, password, selectedRole);
 
     if (!mounted) return;
 
@@ -157,6 +159,26 @@ class _SignupPageState extends State<SignupPage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
+              ),
+              const SizedBox(height: 15),
+              DropdownButtonFormField<String>(
+                initialValue: selectedRole,
+                decoration: InputDecoration(
+                  labelText: "Role",
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'client', child: Text('Client')),
+                  DropdownMenuItem(value: 'lawyer', child: Text('Lawyer')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    selectedRole = value;
+                  });
+                },
               ),
               const SizedBox(height: 20),
               SizedBox(
