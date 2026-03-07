@@ -1,0 +1,39 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Environment files
+.env
+backend/.env
+
+# Flutter / Dart local artifacts
+test_app/.dart_tool/
+test_app/.flutter-plugins
+test_app/.flutter-plugins-dependencies
+test_app/.pub/
+test_app/build/
+
+# Local screenshot tooling
+node_modules/
+package.json
+package-lock.json
+scripts/
+test_app/lib/readme_preview_main.dart
+
+# Logs
+*.log
