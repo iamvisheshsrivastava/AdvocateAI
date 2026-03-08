@@ -1,6 +1,6 @@
 """
 Script to create GitHub issues for identified bugs and improvements in AdvocateAI.
-Run via: python scripts/create_issues.py
+Run via: python .github/create_issues.py
 Requires GITHUB_TOKEN and GITHUB_REPOSITORY environment variables.
 """
 

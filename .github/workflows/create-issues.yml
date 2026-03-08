@@ -3,7 +3,10 @@ name: Create Issues
 on:
   push:
     branches:
-      - copilot/add-issues-to-tab
+      - main
+    paths:
+      - '.github/create_issues.py'
+  workflow_dispatch:
 
 permissions:
   issues: write
