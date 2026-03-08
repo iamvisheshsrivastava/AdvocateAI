@@ -56,6 +56,8 @@ It combines:
 
 ## Screenshots
 
+The screenshots below are captured from the current seeded demo build so they reflect the latest client, lawyer, and notification flows.
+
 ### Landing Page
 ![Landing Page](assets/screenshots/landing-page.png)
 
@@ -70,6 +72,9 @@ It combines:
 
 ### Lawyer Dashboard
 ![Lawyer Dashboard](assets/screenshots/lawyer-dashboard.png)
+
+### Notifications Center
+![Notifications Center](assets/screenshots/notifications-page.png)
 
 ## Tech Stack
 
