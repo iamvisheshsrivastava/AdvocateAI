@@ -1,0 +1,85 @@
+{
+  "lost_phone": {
+    "detected_issue": "Lost Mobile Phone",
+    "actions": [
+      "File a police complaint and keep the complaint number for reference.",
+      "Block the device IMEI on the official CEIR portal.",
+      "Contact your telecom operator to block the SIM and request a replacement if needed."
+    ],
+    "portal": "https://www.ceir.gov.in",
+    "required_info": [
+      "IMEI number",
+      "mobile number",
+      "identity proof",
+      "police complaint details"
+    ],
+    "portal_label": "Central Equipment Identity Register (CEIR)",
+    "notes": [
+      "Keep a copy of your FIR or complaint receipt before using the portal.",
+      "Use the same mobile number linked to the lost device if available."
+    ]
+  },
+  "consumer_complaint": {
+    "detected_issue": "Consumer Complaint",
+    "actions": [
+      "Collect invoices, receipts, warranty information, and written communication with the seller or service provider.",
+      "Send a written complaint to the business and keep proof of delivery.",
+      "If unresolved, file a complaint through the official consumer dispute portal."
+    ],
+    "portal": "https://edaakhil.nic.in/edaakhil/",
+    "required_info": [
+      "consumer details",
+      "seller or company details",
+      "invoice or receipt",
+      "description of defect or deficiency",
+      "supporting documents"
+    ],
+    "portal_label": "e-Daakhil Consumer Complaint Portal",
+    "notes": [
+      "The portal helps you file a formal consumer dispute; fee and jurisdiction depend on claim value.",
+      "You should upload legible copies of invoices and correspondence."
+    ]
+  },
+  "tenant_dispute": {
+    "detected_issue": "Tenant Dispute",
+    "actions": [
+      "Gather the rent agreement, notices, payment records, and messages with the landlord or tenant.",
+      "Record the exact dates of the dispute, such as rent increase, eviction notice, or deposit issue.",
+      "Use the official court services portal to identify the proper filing path or case status process for your state and district."
+    ],
+    "portal": "https://services.ecourts.gov.in/ecourtindia_v6/",
+    "required_info": [
+      "rent agreement",
+      "address of the property",
+      "identity proof",
+      "notices or written communication",
+      "payment records"
+    ],
+    "portal_label": "eCourts Services",
+    "notes": [
+      "Rent control and tenancy procedures vary by state, so the user must confirm the correct local forum.",
+      "The platform only guides the process and does not prepare or submit filings."
+    ]
+  },
+  "employment_complaint": {
+    "detected_issue": "Employment Complaint",
+    "actions": [
+      "Collect appointment letters, salary slips, termination notices, attendance records, and prior complaints.",
+      "Write down the employment issue clearly, including unpaid wages, wrongful termination, or workplace grievance.",
+      "Use the official labour grievance portal to identify the correct complaint channel."
+    ],
+    "portal": "https://samadhan.labour.gov.in/",
+    "required_info": [
+      "employee details",
+      "employer details",
+      "employment documents",
+      "salary or attendance records",
+      "description of grievance"
+    ],
+    "portal_label": "Ministry of Labour Samadhan Portal",
+    "notes": [
+      "The correct labour authority can depend on the nature of employment and location.",
+      "Users should verify whether state-specific labour portals are also required."
+    ]
+  }
+}

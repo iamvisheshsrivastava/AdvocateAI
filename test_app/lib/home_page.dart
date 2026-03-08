@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'watchlist_page.dart';
@@ -29,6 +30,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool isTyping = false;
   List<Map<String, String>> messages = [];
   Map<String, dynamic>? latestCaseAnalysis;
+  Map<String, dynamic>? latestLegalActionGuide;
   List<dynamic> latestSuggestedLawyers = [];
   String lastUserProblem = "";
   bool showCaseAnalysis = false;
@@ -164,6 +166,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       reply = (data["response"] ?? "Error getting response").toString();
+      latestLegalActionGuide = await _fetchLegalActionGuide(text);
 
       final analysis = data["analysis"];
       if (analysis is Map<String, dynamic>) {
@@ -186,6 +189,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       } else {
         latestSuggestedLawyers = [];
       }
+    } else {
+      latestLegalActionGuide = await _fetchLegalActionGuide(text);
     }
 
     setState(() {
@@ -194,6 +199,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
 
     scrollToBottom();
+  }
+
+  Future<Map<String, dynamic>?> _fetchLegalActionGuide(String problemDescription) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/legal-action-guide'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'problem_description': problemDescription}),
+    );
+    if (response.statusCode != 200) {
+      return null;
+    }
+    final data = jsonDecode(response.body);
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    return null;
+  }
+
+  Future<void> _openOfficialPortal(String portal) async {
+    final uri = Uri.tryParse(portal);
+    if (uri == null) {
+      return;
+    }
+    final opened = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the official portal.')),
+      );
+    }
   }
 
   Future<void> _pickDocumentFiles() async {
@@ -557,6 +591,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             if (showCaseAnalysis && latestCaseAnalysis != null) ...[
                               const SizedBox(height: 16),
                               _buildCaseAnalysisCard(context),
+                            ],
+
+                            if (latestLegalActionGuide != null) ...[
+                              const SizedBox(height: 16),
+                              _buildLegalActionGuideCard(),
                             ],
 
                             const SizedBox(height: 16),
@@ -1046,6 +1085,155 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   );
                 }).toList(),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegalActionGuideCard() {
+    final guide = latestLegalActionGuide ?? <String, dynamic>{};
+    final detectedIssue = (guide['detected_issue'] ?? 'Unknown Situation').toString();
+    final issueType = (guide['issue_type'] ?? 'unknown').toString();
+    final portal = (guide['portal'] ?? '').toString();
+    final portalLabel = (guide['portal_label'] ?? 'Official Portal').toString();
+    final disclaimer = (guide['disclaimer'] ?? 'This platform provides guidance only. All legal actions must be completed by the user on official government portals.').toString();
+    final actions = _dynamicListToText(guide['actions']);
+    final requiredInfo = _dynamicListToText(guide['required_info']);
+    final notes = _dynamicListToText(guide['notes']);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.indigo.shade100),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.alt_route_outlined, color: Color(0xFF3657C8)),
+                SizedBox(width: 8),
+                Text(
+                  'Legal Action Guide',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('Detected Issue: $detectedIssue'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F7FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(disclaimer),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Recommended Legal Steps',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 10),
+            if (actions.isEmpty)
+              Text(
+                issueType == 'unknown'
+                    ? 'No official guided workflow was detected for this description yet.'
+                    : 'No steps available.',
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final maxWidth = constraints.maxWidth;
+                  final cardWidth = maxWidth < 640 ? maxWidth : (maxWidth - 12) / 2;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (int index = 0; index < actions.length; index++)
+                        SizedBox(
+                          width: cardWidth,
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFE),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFDDE4FB)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Step ${index + 1}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF3657C8),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  actions[index],
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            const SizedBox(height: 16),
+            if (portal.isNotEmpty) ...[
+              Text('Official Portal: $portalLabel'),
+              const SizedBox(height: 6),
+              SelectableText(
+                portal,
+                style: const TextStyle(color: Color(0xFF3657C8), fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                onPressed: () => _openOfficialPortal(portal),
+                icon: const Icon(Icons.open_in_new_outlined),
+                label: const Text('Open Official Portal'),
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (requiredInfo.isNotEmpty) ...[
+              const Text(
+                'Required Information',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              ...requiredInfo.map(
+                (item) => CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: false,
+                  onChanged: null,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(item),
+                ),
+              ),
+            ],
+            if (notes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Important Notes',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              ...notes.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('• $item'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
