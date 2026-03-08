@@ -83,11 +83,19 @@ CREATE TABLE IF NOT EXISTS lawyer_profiles (
     rating FLOAT DEFAULT 0,
     bio TEXT,
     availability_status TEXT DEFAULT 'available',
+    response_time_hours FLOAT DEFAULT 0,
+    applications_sent INT DEFAULT 0,
+    cases_accepted INT DEFAULT 0,
+    responsiveness_score FLOAT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS availability_status TEXT DEFAULT 'available';
+ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS response_time_hours FLOAT DEFAULT 0;
+ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS applications_sent INT DEFAULT 0;
+ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS cases_accepted INT DEFAULT 0;
+ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS responsiveness_score FLOAT DEFAULT 0;
 
 -- ==============================
 -- CASES TABLE
@@ -102,6 +110,7 @@ CREATE TABLE IF NOT EXISTS cases (
     ai_summary TEXT,
     urgency TEXT,
     city TEXT,
+    case_brief JSONB DEFAULT '{}'::jsonb,
     is_public BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'open' CHECK (status IN ('open', 'closed'))
@@ -110,6 +119,7 @@ CREATE TABLE IF NOT EXISTS cases (
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS issue_type TEXT;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS ai_summary TEXT;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS urgency TEXT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS case_brief JSONB DEFAULT '{}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_cases_legal_area ON cases(legal_area);
@@ -148,6 +158,35 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_case_id ON messages(case_id);
 CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_messages_receiver_id ON messages(receiver_id);
+
+-- ==============================
+-- NOTIFICATIONS TABLE
+-- ==============================
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_state ON notifications(user_id, is_read);
+
+-- ==============================
+-- CASE EVENTS TABLE
+-- ==============================
+CREATE TABLE IF NOT EXISTS case_events (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES cases(case_id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    event_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id);
 
 -- ==============================
 -- AUDIT LOGS TABLE

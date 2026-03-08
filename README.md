@@ -8,6 +8,9 @@ It combines:
 - lawyer recommendation
 - client case creation
 - lawyer case discovery and applications
+- secure client-lawyer messaging
+- explainable lawyer matching
+- notification-driven marketplace workflows
 
 ## What the App Does
 
@@ -16,10 +19,13 @@ It combines:
 - describe a legal problem in natural language
 - get an AI case analysis
 - upload a PDF or image document for legal analysis
+- capture multi-page document packets before upload
 - find recommended lawyers
 - save a problem as a case
 - view personal cases
 - maintain a lawyer watchlist
+- message lawyers inside a case workspace
+- view structured case briefs and timelines
 
 ### For Lawyers
 - create a lawyer profile
@@ -27,14 +33,22 @@ It combines:
 - view recommended cases
 - apply to cases
 - review submitted applications
+- set availability status
+- track responsiveness metrics
+- message clients inside case workspaces
 
 ## Key Features
 
 - AI chat-based lawyer discovery
 - semantic lawyer matching
+- explainable lawyer matching with match reasons
 - role-based client/lawyer flows
 - case marketplace workflow
 - legal document analysis for PDF and image uploads
+- Redis-backed optional caching and AI rate limiting
+- structured case briefs stored on cases
+- notifications for applications, messages, and recommendations
+- secure case messaging and timeline events
 - responsive Flutter web UI
 
 ## Screenshots
@@ -69,7 +83,7 @@ It combines:
 cd backend
 python -m venv venv
 venv\Scripts\activate
-pip install fastapi uvicorn psycopg2-binary sentence-transformers pydantic python-dotenv requests pdfplumber python-multipart
+pip install -r ..\requirements.txt
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -83,7 +97,11 @@ DB_PORT=5432
 DB_NAME=postgres
 DB_USER=postgres
 DB_PASSWORD=postgres
+REDIS_HOST=localhost
+REDIS_PORT=6379
 ```
+
+Redis is optional. If it is unavailable, AdvocateAI falls back to in-memory caching and local rate limiting.
 
 ### Frontend
 
@@ -107,20 +125,22 @@ flutter run -d chrome
 
 - signup / login
 - persistent session handling
-- AI legal issue analysis
-- AI document upload analysis
-- lawyer recommendations
+- AI legal issue analysis with Germany-aware disclaimers, confidence, and recommended actions
+- AI document upload analysis for single or multi-file packets
+- lawyer recommendations with explainable match reasons and availability filtering
 - watchlist
-- case creation and listing
-- lawyer profile management
+- case creation and listing with structured case briefs
+- lawyer profile management with availability and responsiveness scoring
 - case applications
+- secure case messaging and timeline tracking
+- notification center for client and lawyer workflows
 - premium pricing UI placeholder
 
 ## Current Scope
 
 - current professional dataset is focused on Germany-based lawyers
 - the app is structured to scale into a larger legal marketplace
-- payments, notifications, messaging, and uploads storage are not fully implemented yet
+- payments and durable document storage are not fully implemented yet
 
 ## Status
 

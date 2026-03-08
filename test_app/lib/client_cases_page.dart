@@ -1,7 +1,10 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'case_workspace_page.dart';
 import 'config.dart';
 
 class CreateCasePage extends StatefulWidget {
@@ -12,6 +15,7 @@ class CreateCasePage extends StatefulWidget {
   final String? initialIssueType;
   final String? initialUrgency;
   final String? initialAiSummary;
+  final Map<String, dynamic>? initialCaseBrief;
 
   const CreateCasePage({
     super.key,
@@ -22,6 +26,7 @@ class CreateCasePage extends StatefulWidget {
     this.initialIssueType,
     this.initialUrgency,
     this.initialAiSummary,
+    this.initialCaseBrief,
   });
 
   @override
@@ -41,6 +46,9 @@ class _CreateCasePageState extends State<CreateCasePage> {
   String legalArea = '';
   String issueType = '';
   String urgency = 'Medium';
+  int? createdCaseId;
+  Map<String, dynamic> caseBrief = {};
+  Map<String, dynamic> analysis = {};
   List<dynamic> suggestions = [];
 
   @override
@@ -54,10 +62,11 @@ class _CreateCasePageState extends State<CreateCasePage> {
     legalAreaController.text = legalArea;
     issueTypeController.text = issueType;
     aiSummary = widget.initialAiSummary ?? '';
+    caseBrief = Map<String, dynamic>.from(widget.initialCaseBrief ?? <String, dynamic>{});
     final initialUrgency = (widget.initialUrgency ?? 'Medium').trim();
     urgency = const ['Low', 'Medium', 'High'].contains(initialUrgency)
-      ? initialUrgency
-      : 'Medium';
+        ? initialUrgency
+        : 'Medium';
   }
 
   @override
@@ -102,6 +111,7 @@ class _CreateCasePageState extends State<CreateCasePage> {
         'ai_summary': aiSummary,
         'urgency': urgency,
         'city': city,
+        'case_brief': caseBrief,
         'publish_publicly': isPublic,
       }),
     );
@@ -111,14 +121,17 @@ class _CreateCasePageState extends State<CreateCasePage> {
     setState(() => isSubmitting = false);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (data['success'] == true) {
         setState(() {
-          aiSummary = data['ai_summary'] ?? '';
-          legalArea = data['legal_area'] ?? '';
-          issueType = data['issue_type'] ?? '';
-          urgency = data['urgency'] ?? urgency;
-          suggestions = data['suggested_lawyers'] ?? [];
+          createdCaseId = data['case_id'] as int?;
+          aiSummary = data['ai_summary']?.toString() ?? '';
+          legalArea = data['legal_area']?.toString() ?? '';
+          issueType = data['issue_type']?.toString() ?? '';
+          urgency = data['urgency']?.toString() ?? urgency;
+          suggestions = data['suggested_lawyers'] as List<dynamic>? ?? <dynamic>[];
+          caseBrief = Map<String, dynamic>.from(data['case_brief'] as Map? ?? <String, dynamic>{});
+          analysis = Map<String, dynamic>.from(data['analysis'] as Map? ?? <String, dynamic>{});
           legalAreaController.text = legalArea;
           issueTypeController.text = issueType;
         });
@@ -128,7 +141,7 @@ class _CreateCasePageState extends State<CreateCasePage> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Failed to create case.')),
+          SnackBar(content: Text(data['message']?.toString() ?? 'Failed to create case.')),
         );
       }
       return;
@@ -145,14 +158,14 @@ class _CreateCasePageState extends State<CreateCasePage> {
       appBar: AppBar(title: const Text('Create Case')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
+          constraints: const BoxConstraints(maxWidth: 960),
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
               Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -224,17 +237,42 @@ class _CreateCasePageState extends State<CreateCasePage> {
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Publish this case publicly'),
+                        subtitle: const Text('Marketplace discovery works best for public cases.'),
                         value: isPublic,
                         onChanged: (value) => setState(() => isPublic = value),
                       ),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: isSubmitting ? null : _submitCase,
-                          icon: const Icon(Icons.send),
-                          label: Text(isSubmitting ? 'Submitting...' : 'Create Case'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: isSubmitting ? null : _submitCase,
+                              icon: const Icon(Icons.send),
+                              label: Text(isSubmitting ? 'Submitting...' : 'Create Case'),
+                            ),
+                          ),
+                          if (createdCaseId != null) ...[
+                            const SizedBox(width: 10),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final navigator = Navigator.of(context);
+                                final prefs = await SharedPreferences.getInstance();
+                                final userId = prefs.getInt('user_id');
+                                if (!mounted || userId == null) return;
+                                await navigator.push(
+                                  MaterialPageRoute(
+                                    builder: (_) => CaseWorkspacePage(
+                                      caseId: createdCaseId!,
+                                      currentUserId: userId,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.chat_bubble_outline),
+                              label: const Text('Open Workspace'),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -242,38 +280,28 @@ class _CreateCasePageState extends State<CreateCasePage> {
               ),
               if (aiSummary.isNotEmpty || legalArea.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('AI Case Summary', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        Text('Legal area: ${legalArea.isEmpty ? 'N/A' : legalArea}'),
-                        const SizedBox(height: 6),
-                        Text('Issue type: ${issueType.isEmpty ? 'N/A' : issueType}'),
-                        const SizedBox(height: 6),
-                        Text('Urgency: $urgency'),
-                        const SizedBox(height: 6),
-                        Text(aiSummary),
-                      ],
-                    ),
-                  ),
+                _AnalysisCard(
+                  aiSummary: aiSummary,
+                  legalArea: legalArea,
+                  issueType: issueType,
+                  urgency: urgency,
+                  analysis: analysis,
                 ),
+              ],
+              if (caseBrief.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _CaseBriefCard(caseBrief: caseBrief),
               ],
               if (suggestions.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                const Text('Suggested Lawyers', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Suggested Lawyers',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
-                ...suggestions.map((item) => Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.gavel),
-                        title: Text(item['name']?.toString() ?? ''),
-                        subtitle: Text('${item['city'] ?? ''} • Rating ${item['rating'] ?? '-'}'),
-                      ),
-                    )),
+                ...suggestions.map(
+                  (item) => _SuggestedLawyerCard(item: item as Map<String, dynamic>),
+                ),
               ],
             ],
           ),
@@ -292,6 +320,7 @@ class MyCasesPage extends StatefulWidget {
 
 class _MyCasesPageState extends State<MyCasesPage> {
   bool isLoading = true;
+  int? currentUserId;
   List<dynamic> cases = [];
 
   @override
@@ -310,6 +339,7 @@ class _MyCasesPageState extends State<MyCasesPage> {
 
     if (response.statusCode == 200) {
       setState(() {
+        currentUserId = userId;
         cases = jsonDecode(response.body) as List<dynamic>;
         isLoading = false;
       });
@@ -329,13 +359,45 @@ class _MyCasesPageState extends State<MyCasesPage> {
               itemCount: cases.length,
               itemBuilder: (context, index) {
                 final c = cases[index] as Map<String, dynamic>;
+                final brief = Map<String, dynamic>.from(
+                  c['case_brief'] as Map? ?? <String, dynamic>{},
+                );
                 return Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: ListTile(
                     leading: const Icon(Icons.folder_open),
                     title: Text(c['title']?.toString() ?? ''),
-                    subtitle: Text(
-                      '${c['legal_area'] ?? 'General Legal'} • ${c['city'] ?? ''} • ${c['status'] ?? ''}',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text(
+                          '${c['legal_area'] ?? 'General Legal'} • ${c['city'] ?? ''} • ${c['status'] ?? ''}',
+                        ),
+                        if ((brief['case_summary']?.toString() ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            brief['case_summary']?.toString() ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
                     ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: currentUserId == null
+                        ? null
+                        : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CaseWorkspacePage(
+                                  caseId: c['case_id'] as int,
+                                  currentUserId: currentUserId!,
+                                ),
+                              ),
+                            );
+                          },
                   ),
                 );
               },
@@ -396,25 +458,248 @@ class _RecommendedLawyersPageState extends State<RecommendedLawyersPage> {
           : GridView.builder(
               padding: const EdgeInsets.all(16),
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 360,
-                mainAxisExtent: 120,
+                maxCrossAxisExtent: 380,
+                mainAxisExtent: 210,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),
               itemCount: lawyers.length,
               itemBuilder: (context, index) {
                 final lawyer = lawyers[index] as Map<String, dynamic>;
-                return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.gavel, color: Colors.blue),
-                    title: Text(lawyer['name']?.toString() ?? ''),
-                    subtitle: Text(
-                      '${lawyer['city'] ?? ''} • Rating ${lawyer['rating'] ?? '-'}',
-                    ),
-                  ),
-                );
+                return _SuggestedLawyerCard(item: lawyer);
               },
             ),
     );
   }
+}
+
+class _AnalysisCard extends StatelessWidget {
+  final String aiSummary;
+  final String legalArea;
+  final String issueType;
+  final String urgency;
+  final Map<String, dynamic> analysis;
+
+  const _AnalysisCard({
+    required this.aiSummary,
+    required this.legalArea,
+    required this.issueType,
+    required this.urgency,
+    required this.analysis,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final reasoning = analysis['reasoning']?.toString() ?? '';
+    final action = analysis['recommended_action']?.toString() ?? '';
+    final confidence = analysis['confidence_level']?.toString() ?? 'Medium';
+    final disclaimer = analysis['disclaimer']?.toString() ??
+        'AdvocateAI provides informational support and not formal legal advice.';
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'AI Case Summary',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _Pill(text: 'Legal area: ${legalArea.isEmpty ? 'N/A' : legalArea}'),
+                _Pill(text: 'Issue type: ${issueType.isEmpty ? 'N/A' : issueType}'),
+                _Pill(text: 'Urgency: $urgency'),
+                _Pill(text: 'Confidence: $confidence'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(aiSummary),
+            if (reasoning.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Reasoning: $reasoning'),
+            ],
+            if (action.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Recommended action: $action'),
+            ],
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF6D8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(disclaimer),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CaseBriefCard extends StatelessWidget {
+  final Map<String, dynamic> caseBrief;
+
+  const _CaseBriefCard({required this.caseBrief});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Structured Case Brief',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            const SizedBox(height: 12),
+            _BriefGroup(title: 'Summary', values: [caseBrief['case_summary']?.toString() ?? '']),
+            _BriefGroup(title: 'Key Entities', values: _readList(caseBrief['key_entities'])),
+            _BriefGroup(title: 'Timeline', values: _readList(caseBrief['timeline'])),
+            _BriefGroup(title: 'Documents', values: _readList(caseBrief['documents'])),
+            _BriefGroup(
+              title: 'Recommended Next Steps',
+              values: _readList(caseBrief['recommended_next_steps']),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BriefGroup extends StatelessWidget {
+  final String title;
+  final List<String> values;
+
+  const _BriefGroup({required this.title, required this.values});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = values.where((item) => item.trim().isNotEmpty).toList();
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('• $item'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestedLawyerCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+
+  const _SuggestedLawyerCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final reasons = _readList(item['match_reason']);
+    final rawMatchScore = item['match_score'] ?? item['score'];
+    final matchScore = rawMatchScore is num ? rawMatchScore.toDouble() : null;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(child: Icon(Icons.gavel)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item['name']?.toString() ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('${item['city'] ?? ''} • Rating ${item['rating'] ?? '-'}'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (matchScore != null) _Pill(text: 'Match ${matchScore.toStringAsFixed(2)}'),
+                if ((item['availability_status']?.toString() ?? '').isNotEmpty)
+                  _Pill(text: 'Status ${item['availability_status']}'),
+                if (item['responsiveness_score'] != null)
+                  _Pill(text: 'Responsiveness ${item['responsiveness_score']}'),
+              ],
+            ),
+            if (reasons.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Matched because', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              ...reasons.map(
+                (reason) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• $reason'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+
+  const _Pill({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F6FD),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(text),
+    );
+  }
+}
+
+List<String> _readList(dynamic raw) {
+  if (raw is List) {
+    return raw.map((item) => item.toString()).where((item) => item.trim().isNotEmpty).toList();
+  }
+  if (raw is String && raw.trim().isNotEmpty) {
+    return [raw.trim()];
+  }
+  return <String>[];
 }

@@ -1,11 +1,14 @@
 import base64
 import io
+import json
 from typing import Any
 
 import pdfplumber
 import requests
 
 from services.ai_service import GEMINI_API_KEY, call_gemini, extract_json_object
+from services.ai_service import LEGAL_DEFAULT_AREA, build_case_brief
+from services.cache_service import cache_service
 
 
 ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
@@ -14,11 +17,13 @@ ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 def _fallback_analysis() -> dict[str, Any]:
     return {
         "document_type": "Unknown",
-        "legal_area": "General Legal",
+        "legal_area": LEGAL_DEFAULT_AREA,
         "key_dates": [],
         "summary": "Unable to analyze document content.",
         "potential_issue": "Unknown",
         "recommended_action": "Consult a qualified lawyer for review.",
+        "confidence_level": "Low",
+        "citations": [],
     }
 
 
@@ -45,6 +50,8 @@ Return JSON with the following fields:
 - summary
 - potential_issue
 - recommended_action
+- confidence_level
+- citations
 
 The response must be valid JSON.
 
@@ -64,6 +71,8 @@ Return JSON with the following fields:
 - summary
 - potential_issue
 - recommended_action
+- confidence_level
+- citations
 
 The response must be valid JSON.
 """
@@ -85,6 +94,8 @@ def _normalize_analysis(raw: dict[str, Any]) -> dict[str, Any]:
         "recommended_action": str(
             raw.get("recommended_action") or fallback["recommended_action"]
         ).strip(),
+        "confidence_level": str(raw.get("confidence_level") or fallback["confidence_level"]).strip(),
+        "citations": [str(item).strip() for item in raw.get("citations", []) if str(item).strip()],
     }
 
 
@@ -145,14 +156,82 @@ def _analyze_with_image(file_bytes: bytes, mime_type: str) -> dict[str, Any]:
         return _fallback_analysis()
 
 
-def analyze_document(file_name: str, content_type: str | None, file_bytes: bytes) -> dict[str, Any]:
+def analyze_document(
+    file_name: str,
+    content_type: str | None,
+    file_bytes: bytes,
+    actor_key: str = "anonymous",
+) -> dict[str, Any]:
     extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     if extension not in ALLOWED_EXTENSIONS:
         raise ValueError("Unsupported file type. Only PDF, JPG, JPEG, and PNG are allowed.")
 
+    cache_key = f"document_analysis:{cache_service.make_hash(file_name + str(len(file_bytes)) + file_bytes[:256].hex())}"
+    cached = cache_service.get(cache_key)
+    if cached:
+        return cached
+
+    if not cache_service.allow_request("document_analysis", actor_key, limit=20, window_seconds=60):
+        fallback = _fallback_analysis()
+        fallback["rate_limited"] = True
+        fallback["case_brief"] = build_case_brief(
+            fallback["summary"],
+            analysis={"legal_area": fallback["legal_area"], "summary": fallback["summary"]},
+            document_names=[file_name],
+            actor_key=actor_key,
+        )
+        return fallback
+
     if extension == "pdf":
         extracted_text = _extract_text_from_pdf(file_bytes)
-        return _analyze_with_text(extracted_text)
+        analysis = _analyze_with_text(extracted_text)
+    else:
+        mime = content_type or ("image/png" if extension == "png" else "image/jpeg")
+        analysis = _analyze_with_image(file_bytes, mime)
 
-    mime = content_type or ("image/png" if extension == "png" else "image/jpeg")
-    return _analyze_with_image(file_bytes, mime)
+    analysis["case_brief"] = build_case_brief(
+        analysis.get("summary", ""),
+        analysis={
+            "legal_area": analysis.get("legal_area"),
+            "summary": analysis.get("summary"),
+        },
+        document_names=[file_name],
+        actor_key=actor_key,
+    )
+    cache_service.set(cache_key, analysis, ttl_seconds=1800)
+    return analysis
+
+
+def analyze_documents(files: list[tuple[str, str | None, bytes]], actor_key: str = "anonymous") -> dict[str, Any]:
+    if not files:
+        raise ValueError("At least one document is required.")
+
+    analyses = [
+        analyze_document(name, content_type, payload, actor_key=actor_key)
+        for name, content_type, payload in files
+    ]
+    combined_text = "\n".join([item.get("summary", "") for item in analyses if item.get("summary")])
+    legal_areas = [item.get("legal_area") for item in analyses if item.get("legal_area")]
+    primary_legal_area = legal_areas[0] if legal_areas else LEGAL_DEFAULT_AREA
+    brief = build_case_brief(
+        combined_text,
+        analysis={
+            "legal_area": primary_legal_area,
+            "summary": combined_text,
+        },
+        document_names=[name for name, _, _ in files],
+        actor_key=actor_key,
+    )
+
+    return {
+        "document_type": "Multi-document packet" if len(analyses) > 1 else analyses[0].get("document_type"),
+        "legal_area": primary_legal_area,
+        "key_dates": [date for item in analyses for date in item.get("key_dates", [])],
+        "summary": combined_text or analyses[0].get("summary", ""),
+        "potential_issue": analyses[0].get("potential_issue", "Unknown"),
+        "recommended_action": analyses[0].get("recommended_action", ""),
+        "confidence_level": analyses[0].get("confidence_level", "Low"),
+        "citations": [citation for item in analyses for citation in item.get("citations", [])],
+        "case_brief": brief,
+        "documents": analyses,
+    }

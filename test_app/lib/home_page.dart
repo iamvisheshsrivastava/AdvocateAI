@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'watchlist_page.dart';
@@ -33,6 +35,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool isUploadingDocument = false;
   Map<String, dynamic>? latestDocumentAnalysis;
   List<dynamic> latestDocumentRecommendedLawyers = [];
+  List<_PendingUpload> pendingUploads = [];
+
+  final ImagePicker imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -151,7 +156,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final response = await http.post(
       url,
       headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"message": text}),
+      body: jsonEncode({"message": text, "user_id": userId}),
     );
 
     String reply = "Error getting response";
@@ -191,22 +196,74 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     scrollToBottom();
   }
 
-  Future<void> _uploadAndAnalyzeDocument() async {
+  Future<void> _pickDocumentFiles() async {
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      allowMultiple: true,
       withData: true,
     );
 
     if (picked == null || picked.files.isEmpty) return;
 
-    final file = picked.files.first;
-    if ((file.bytes == null || file.bytes!.isEmpty) && (file.path == null || file.path!.isEmpty)) {
+    final nextUploads = <_PendingUpload>[];
+    for (final file in picked.files) {
+      if ((file.bytes == null || file.bytes!.isEmpty) && (file.path == null || file.path!.isEmpty)) {
+        continue;
+      }
+      nextUploads.add(
+        _PendingUpload(
+          name: file.name,
+          bytes: file.bytes,
+          path: file.path,
+          mimeType: _guessMimeType(file.name),
+        ),
+      );
+    }
+
+    if (nextUploads.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not read selected file.')),
+        const SnackBar(content: Text('Could not read selected files.')),
       );
       return;
+    }
+
+    setState(() {
+      pendingUploads = nextUploads;
+    });
+  }
+
+  Future<void> _captureWithCamera() async {
+    if (kIsWeb) {
+      await _pickDocumentFiles();
+      return;
+    }
+
+    final picked = await imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      pendingUploads = [
+        ...pendingUploads,
+        _PendingUpload(
+          name: picked.name,
+          bytes: bytes,
+          mimeType: _guessMimeType(picked.name),
+        ),
+      ];
+    });
+  }
+
+  Future<void> _uploadAndAnalyzeDocument() async {
+    if (pendingUploads.isEmpty) {
+      await _pickDocumentFiles();
+      if (pendingUploads.isEmpty) return;
     }
 
     setState(() {
@@ -218,17 +275,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'POST',
         Uri.parse('${ApiConfig.baseUrl}/documents/analyze'),
       );
+      if (userId != null) {
+        request.fields['user_id'] = '$userId';
+      }
 
-      if (file.bytes != null && file.bytes!.isNotEmpty) {
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'file',
-            file.bytes!,
-            filename: file.name,
-          ),
-        );
-      } else if (file.path != null) {
-        request.files.add(await http.MultipartFile.fromPath('file', file.path!));
+      for (int index = 0; index < pendingUploads.length; index++) {
+        final file = pendingUploads[index];
+        if (file.bytes != null && file.bytes!.isNotEmpty) {
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              index == 0 ? 'file' : 'files',
+              file.bytes!,
+              filename: file.name,
+            ),
+          );
+        } else if (file.path != null) {
+          request.files.add(
+            await http.MultipartFile.fromPath(index == 0 ? 'file' : 'files', file.path!),
+          );
+        }
       }
 
       final streamed = await request.send();
@@ -246,9 +311,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             'summary': data['summary'] ?? '',
             'potential_issue': data['potential_issue'] ?? '',
             'recommended_action': data['recommended_action'] ?? '',
+            'confidence_level': data['confidence_level'] ?? 'Medium',
+            'citations': data['citations'] ?? <dynamic>[],
+            'case_brief': data['case_brief'] ?? <String, dynamic>{},
+            'documents': data['documents'] ?? <dynamic>[],
           };
           final lawyers = data['recommended_lawyers'];
           latestDocumentRecommendedLawyers = lawyers is List ? lawyers : [];
+          pendingUploads = [];
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -267,6 +337,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         });
       }
     }
+  }
+
+  void _removePendingUpload(_PendingUpload upload) {
+    setState(() {
+      pendingUploads = pendingUploads.where((item) => item != upload).toList();
+    });
   }
 
   @override
@@ -295,7 +371,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 12,
                     ),
                   ],
@@ -378,10 +454,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       title: const Text('Notifications'),
                       contentPadding: EdgeInsets.zero,
                       onTap: () {
+                        if (userId == null) return;
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const NotificationsPage(),
+                            builder: (context) => NotificationsPage(userId: userId!),
                           ),
                         );
                       },
@@ -429,7 +506,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           borderRadius: BorderRadius.circular(18),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
+                              color: Colors.black.withValues(alpha: 0.06),
                               blurRadius: 20,
                             ),
                           ],
@@ -440,6 +517,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
+                                if (userId != null) NotificationBellAction(userId: userId!),
                                 TextButton.icon(
                                   onPressed: logout,
                                   icon: const Icon(Icons.logout),
@@ -480,6 +558,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               const SizedBox(height: 16),
                               _buildCaseAnalysisCard(context),
                             ],
+
+                            const SizedBox(height: 16),
+                            _buildDocumentCaptureCard(),
 
                             if (latestDocumentAnalysis != null) ...[
                               const SizedBox(height: 16),
@@ -586,11 +667,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         )
                                       : const Icon(Icons.attach_file, size: 18),
                                   label: Text(
-                                    isUploadingDocument ? 'Analyzing...' : 'Attach',
+                                    isUploadingDocument ? 'Analyzing...' : 'Analyze Documents',
                                   ),
                                   onPressed: isUploadingDocument ? null : _uploadAndAnalyzeDocument,
                                 ),
                                 const SizedBox(width: 8),
+                                ActionChip(
+                                  avatar: const Icon(Icons.photo_camera_outlined, size: 18),
+                                  label: const Text('Camera'),
+                                  onPressed: isUploadingDocument ? null : _captureWithCamera,
+                                ),
+                                const SizedBox(width: 8),
+                                ActionChip(
+                                  avatar: const Icon(Icons.collections_outlined, size: 18),
+                                  label: const Text('Files'),
+                                  onPressed: isUploadingDocument ? null : _pickDocumentFiles,
+                                ),
                               ],
                             ),
                           ],
@@ -632,6 +724,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final location = (analysis['location'] ?? 'Unknown').toString();
     final urgency = (analysis['urgency'] ?? 'Medium').toString();
     final summary = (analysis['summary'] ?? '').toString();
+    final confidence = (analysis['confidence_level'] ?? 'Medium').toString();
+    final reasoning = (analysis['reasoning'] ?? '').toString();
+    final recommendedAction = (analysis['recommended_action'] ?? '').toString();
+    final disclaimer = (analysis['disclaimer'] ?? 'AdvocateAI provides informational support and not formal legal advice.').toString();
+    final citations = _dynamicListToText(analysis['citations']);
+    final caseBrief = Map<String, dynamic>.from(analysis['case_brief'] as Map? ?? <String, dynamic>{});
 
     return Card(
       elevation: 0,
@@ -662,6 +760,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Text('Location: $location'),
             const SizedBox(height: 4),
             Text('Urgency: $urgency'),
+            const SizedBox(height: 4),
+            Text('Confidence: $confidence'),
             if (summary.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
@@ -669,6 +769,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 style: const TextStyle(height: 1.35),
               ),
             ],
+            if (reasoning.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Reasoning: $reasoning'),
+            ],
+            if (recommendedAction.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Recommended Action: $recommendedAction'),
+            ],
+            if (citations.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Citations: ${citations.join(' • ')}'),
+            ],
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7DA),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(disclaimer),
+            ),
             const SizedBox(height: 14),
             Wrap(
               spacing: 10,
@@ -703,6 +824,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           initialIssueType: issueType == 'N/A' ? '' : issueType,
                           initialUrgency: urgency,
                           initialAiSummary: summary,
+                          initialCaseBrief: caseBrief,
                         ),
                       ),
                     );
@@ -725,6 +847,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final summary = (analysis['summary'] ?? '').toString();
     final recommendedAction = (analysis['recommended_action'] ?? '').toString();
     final potentialIssue = (analysis['potential_issue'] ?? '').toString();
+    final confidence = (analysis['confidence_level'] ?? 'Medium').toString();
+    final citations = _dynamicListToText(analysis['citations']);
+    final caseBrief = Map<String, dynamic>.from(analysis['case_brief'] as Map? ?? <String, dynamic>{});
+    final documents = analysis['documents'] as List<dynamic>? ?? <dynamic>[];
 
     return Card(
       elevation: 0,
@@ -751,6 +877,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Text('Document Type: $documentType'),
             const SizedBox(height: 4),
             Text('Legal Area: $legalArea'),
+            const SizedBox(height: 4),
+            Text('Confidence: $confidence'),
             if (potentialIssue.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text('Potential Issue: $potentialIssue'),
@@ -762,6 +890,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (recommendedAction.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text('Recommended Action: $recommendedAction'),
+            ],
+            if (documents.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Documents analyzed: ${documents.length}'),
+            ],
+            if (citations.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Citations: ${citations.join(' • ')}'),
             ],
             const SizedBox(height: 12),
             Wrap(
@@ -796,6 +932,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           initialIssueType: potentialIssue,
                           initialAiSummary: summary,
                           initialUrgency: 'Medium',
+                          initialCaseBrief: caseBrief,
                         ),
                       ),
                     );
@@ -805,6 +942,110 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentCaptureCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.orange.shade100),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.document_scanner_outlined, color: Color(0xFFB76E00)),
+                SizedBox(width: 8),
+                Text(
+                  'Document Capture',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Capture with camera or assemble a multi-page upload before analysis.',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: isUploadingDocument ? null : _captureWithCamera,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Camera Capture'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: isUploadingDocument ? null : _pickDocumentFiles,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('Select Files'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: isUploadingDocument || pendingUploads.isEmpty ? null : _uploadAndAnalyzeDocument,
+                  icon: const Icon(Icons.analytics_outlined),
+                  label: Text(isUploadingDocument ? 'Analyzing...' : 'Analyze Packet'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (pendingUploads.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFAEF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text('No documents queued yet.'),
+              )
+            else
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: pendingUploads.map((item) {
+                  return Container(
+                    width: 220,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFAEF),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(_iconForUpload(item.name), color: const Color(0xFFB76E00)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                item.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: isUploadingDocument ? null : () => _removePendingUpload(item),
+                              icon: const Icon(Icons.close, size: 18),
+                            ),
+                          ],
+                        ),
+                        Text(item.path == null ? 'Ready from memory' : 'Ready from device'),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
           ],
         ),
       ),
@@ -845,4 +1086,41 @@ class _AnimatedTextState extends State<AnimatedText> {
   Widget build(BuildContext context) {
     return Text(displayedText);
   }
+}
+
+class _PendingUpload {
+  final String name;
+  final List<int>? bytes;
+  final String? path;
+  final String mimeType;
+
+  const _PendingUpload({
+    required this.name,
+    this.bytes,
+    this.path,
+    required this.mimeType,
+  });
+}
+
+String _guessMimeType(String fileName) {
+  final normalized = fileName.toLowerCase();
+  if (normalized.endsWith('.pdf')) return 'application/pdf';
+  if (normalized.endsWith('.png')) return 'image/png';
+  return 'image/jpeg';
+}
+
+List<String> _dynamicListToText(dynamic raw) {
+  if (raw is List) {
+    return raw.map((item) => item.toString()).where((item) => item.trim().isNotEmpty).toList();
+  }
+  if (raw is String && raw.trim().isNotEmpty) {
+    return [raw.trim()];
+  }
+  return <String>[];
+}
+
+IconData _iconForUpload(String fileName) {
+  final normalized = fileName.toLowerCase();
+  if (normalized.endsWith('.pdf')) return Icons.picture_as_pdf_outlined;
+  return Icons.image_outlined;
 }

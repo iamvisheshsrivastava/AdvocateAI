@@ -8,11 +8,13 @@ router = APIRouter(tags=["chat"])
 
 class ChatRequest(BaseModel):
     message: str
+    user_id: int | None = None
 
 
 @router.post("/chat")
 async def chat(data: ChatRequest):
     message = data.message.strip()
+    actor_key = f"user:{data.user_id}" if data.user_id is not None else "anonymous"
     if not message:
         return {
             "response": "Please describe your legal problem.",
@@ -21,7 +23,7 @@ async def chat(data: ChatRequest):
             "can_post_case": False,
         }
 
-    analysis = analyze_legal_problem(message)
+    analysis = analyze_legal_problem(message, actor_key=actor_key)
     lawyers = rank_lawyers(
         query_text=message,
         legal_area=analysis.get("legal_area"),
@@ -38,7 +40,7 @@ async def chat(data: ChatRequest):
                 f"({item['reviews']} reviews)\n"
             )
 
-    response_text = generate_chat_response(message, context)
+    response_text = generate_chat_response(message, context, actor_key=actor_key)
 
     return {
         "response": response_text,

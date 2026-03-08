@@ -10,6 +10,7 @@ class CaseCreateRequest(BaseModel):
     ai_summary: str | None = None
     urgency: str | None = None
     city: str | None = None
+    case_brief: dict | None = None
     status: str = "open"
     publish_publicly: bool = True
 
@@ -19,3 +20,8 @@ class CaseApplyRequest(BaseModel):
     lawyer_id: int
     message: str
     status: str = "submitted"
+
+
+class CaseEventRequest(BaseModel):
+    description: str
+    event_date: str

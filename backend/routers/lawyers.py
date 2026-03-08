@@ -76,7 +76,9 @@ async def get_lawyer_profile(lawyer_id: int):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT lawyer_id, name, city, practice_areas, languages, experience_years, rating, bio, availability_status
+        SELECT lawyer_id, name, city, practice_areas, languages, experience_years, rating, bio,
+               availability_status, response_time_hours, applications_sent, cases_accepted,
+               responsiveness_score
         FROM lawyer_profiles
         WHERE lawyer_id = %s
         """,
@@ -99,6 +101,10 @@ async def get_lawyer_profile(lawyer_id: int):
         "rating": row[6],
         "bio": row[7],
         "availability_status": row[8],
+        "response_time_hours": row[9],
+        "applications_sent": row[10],
+        "cases_accepted": row[11],
+        "responsiveness_score": row[12],
     }
 
 

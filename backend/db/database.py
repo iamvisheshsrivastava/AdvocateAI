@@ -45,6 +45,10 @@ def run_startup_migrations():
         """
     )
     cur.execute("ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS availability_status TEXT DEFAULT 'available'")
+    cur.execute("ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS response_time_hours FLOAT DEFAULT 0")
+    cur.execute("ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS applications_sent INT DEFAULT 0")
+    cur.execute("ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS cases_accepted INT DEFAULT 0")
+    cur.execute("ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS responsiveness_score FLOAT DEFAULT 0")
 
     cur.execute(
         """
@@ -68,6 +72,7 @@ def run_startup_migrations():
     cur.execute("ALTER TABLE cases ADD COLUMN IF NOT EXISTS issue_type TEXT")
     cur.execute("ALTER TABLE cases ADD COLUMN IF NOT EXISTS ai_summary TEXT")
     cur.execute("ALTER TABLE cases ADD COLUMN IF NOT EXISTS urgency TEXT")
+    cur.execute("ALTER TABLE cases ADD COLUMN IF NOT EXISTS case_brief JSONB DEFAULT '{}'::jsonb")
 
     cur.execute(
         """
@@ -97,6 +102,31 @@ def run_startup_migrations():
         """
     )
 
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            user_id INT REFERENCES users(id) ON DELETE CASCADE,
+            message TEXT NOT NULL,
+            type TEXT NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS case_events (
+            id SERIAL PRIMARY KEY,
+            case_id INT REFERENCES cases(case_id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            event_date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cases_legal_area ON cases(legal_area)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cases_city ON cases(city)")
@@ -105,6 +135,11 @@ def run_startup_migrations():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_case_applications_lawyer_id ON case_applications(lawyer_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lawyer_profiles_city ON lawyer_profiles(city)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lawyer_profiles_lawyer_id ON lawyer_profiles(lawyer_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_case_id ON messages(case_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_receiver_id ON messages(receiver_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read_state ON notifications(user_id, is_read)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id)")
 
     conn.commit()
     cur.close()
