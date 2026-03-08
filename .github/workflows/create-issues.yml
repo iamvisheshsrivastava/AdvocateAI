@@ -1,0 +1,438 @@
+name: Create Issues
+
+on:
+  push:
+    branches:
+      - copilot/add-issues-to-tab
+    paths:
+      - '.github/workflows/create-issues.yml'
+
+permissions:
+  issues: write
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Issues via GitHub Script
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = [
+              {
+                title: "[Security] Passwords stored and compared in plain text",
+                body: `## Description
+
+The application stores user passwords in plain text in the database and compares them directly in SQL queries. This is a critical security vulnerability.
+
+## Location
+
+- \`backend/routers/auth.py\` – The login query does \`COALESCE(password_hash, password) = %s OR password = %s\`, comparing plain-text passwords.
+- \`backend/db/database.py\` – The migration sets \`password_hash = COALESCE(password_hash, password)\`, storing the same plain-text value in both columns.
+- \`backend/routers/auth.py\` (signup) – Password is stored as-is: \`INSERT INTO users (..., password, password_hash, ...) VALUES (..., %s, %s, ...)\`.
+
+## Impact
+
+If the database is compromised, all user passwords are immediately exposed. Attackers can use these passwords in credential-stuffing attacks across other services since users often reuse passwords.
+
+## Recommendation
+
+- Use a strong, slow hashing algorithm such as **bcrypt** or **argon2** (via the \`passlib\` library) to hash passwords before storing them.
+- Remove the plain-text \`password\` column from the \`users\` table.
+- Verify passwords by hashing the input and comparing the digest, never the raw value.
+
+\`\`\`python
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+hashed = pwd_context.hash(plain_password)          # on signup
+is_valid = pwd_context.verify(plain_password, hashed)  # on login
+\`\`\`
+
+## Severity
+
+🔴 **Critical**`,
+                labels: ["bug", "security"]
+              },
+              {
+                title: "[Security] No server-side session or token authentication",
+                body: `## Description
+
+API endpoints accept a \`user_id\` (in request body or query parameters) to identify the acting user, but there is no server-side verification that the caller actually owns that identity. Any client can impersonate any user by simply sending a different \`user_id\`.
+
+## Location
+
+- \`backend/routers/cases.py\` – \`POST /cases/create\` uses \`data.client_id\` from the request body without verifying a session token.
+- \`backend/routers/messages.py\` – \`POST /messages/send\` uses \`data.sender_id\` without authentication.
+- \`backend/routers/lawyers.py\` – \`POST /lawyer/profile\` uses \`data.lawyer_id\` without authentication.
+- All other write endpoints follow the same pattern.
+
+## Impact
+
+Any unauthenticated user can create cases, send messages, apply to cases, or modify profiles on behalf of any other user by guessing or knowing their \`user_id\`.
+
+## Recommendation
+
+Implement JWT-based (or session-token-based) authentication:
+1. On login, generate a signed JWT containing \`user_id\` and \`role\` with an expiry.
+2. Return the token to the client.
+3. Add a FastAPI dependency (e.g., \`Depends(get_current_user)\`) that validates the JWT on every protected endpoint.
+4. Compare the token's \`user_id\` with any resource-owner IDs in the request.
+
+## Severity
+
+🔴 **Critical**`,
+                labels: ["bug", "security"]
+              },
+              {
+                title: "[Security] Wildcard CORS policy allows any origin",
+                body: `## Description
+
+The FastAPI application uses \`allow_origins=["*"]\`, which permits requests from any domain. When combined with \`allow_credentials=True\`, this violates the CORS specification and exposes the API to cross-site request forgery (CSRF) attacks.
+
+## Location
+
+\`backend/app.py\`:
+\`\`\`python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,   # <-- invalid with wildcard origin
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+\`\`\`
+
+## Impact
+
+Malicious websites can make authenticated requests to the API on behalf of logged-in users. Browsers actually reject \`allow_credentials=True\` with a wildcard origin, which may also cause CORS failures for legitimate users.
+
+## Recommendation
+
+Restrict \`allow_origins\` to the list of trusted frontend domains:
+\`\`\`python
+allow_origins=[
+    "https://advocateai.example.com",
+    "http://localhost:8080",  # development only
+],
+\`\`\`
+
+## Severity
+
+🟠 **High**`,
+                labels: ["bug", "security"]
+              },
+              {
+                title: "[Bug] Database connections leak when exceptions are raised",
+                body: `## Description
+
+Throughout the backend routers and services, database connections are obtained with \`get_db_connection()\` and closed manually with \`cur.close(); conn.close()\`. If any exception occurs between acquiring the connection and the close calls, the connection is never returned and will leak, eventually exhausting the PostgreSQL connection pool.
+
+## Location
+
+Examples in:
+- \`backend/routers/auth.py\` – \`login()\`, \`signup()\`
+- \`backend/routers/cases.py\` – \`create_case()\`, \`apply_to_case()\`, \`get_recommended_cases_for_lawyer()\`
+- \`backend/routers/lawyers.py\` – \`upsert_lawyer_profile()\`, \`get_watchlist()\`
+- \`backend/services/matching_service.py\` – \`refresh_lawyer_responsiveness()\`
+
+## Recommendation
+
+Wrap all database operations in a \`try/finally\` block, or better, use a context manager:
+
+\`\`\`python
+# Option A: try/finally
+conn = get_db_connection()
+try:
+    cur = conn.cursor()
+    cur.execute(...)
+    conn.commit()
+finally:
+    cur.close()
+    conn.close()
+
+# Option B: context manager (requires psycopg2 >= 2.5)
+with get_db_connection() as conn:
+    with conn.cursor() as cur:
+        cur.execute(...)
+\`\`\`
+
+Or migrate to a connection pool (e.g., \`psycopg2.pool.SimpleConnectionPool\`) so that connections are properly recycled.
+
+## Severity
+
+🟠 **High**`,
+                labels: ["bug"]
+              },
+              {
+                title: "[Bug] Missing HTTP 404 responses — endpoints return empty objects instead",
+                body: `## Description
+
+Several GET endpoints silently return an empty object (\`{}\`) or empty array (\`[]\`) when a requested resource does not exist, instead of returning a proper HTTP 404 response. This makes it impossible for clients to distinguish between "resource not found" and "resource exists but is empty".
+
+## Location
+
+- \`backend/routers/cases.py\` – \`get_case_detail()\` returns \`{}\` when case not found.
+- \`backend/routers/lawyers.py\` – \`get_lawyer_profile()\` returns \`{}\` when profile not found.
+- \`backend/routers/cases.py\` – \`get_case_events()\` does not raise 404 if the case does not exist.
+
+## Example
+
+\`\`\`python
+# current (incorrect)
+if not row:
+    return {}
+
+# correct
+from fastapi import HTTPException
+if not row:
+    raise HTTPException(status_code=404, detail="Case not found.")
+\`\`\`
+
+## Impact
+
+Clients (including the Flutter frontend) cannot reliably detect missing resources, leading to silent UI failures and confusing user experiences.
+
+## Severity
+
+🟡 **Medium**`,
+                labels: ["bug"]
+              },
+              {
+                title: "[Bug] No pagination on GET /cases/open — returns all cases",
+                body: `## Description
+
+The \`GET /cases/open\` endpoint fetches every open public case from the database in a single query with no \`LIMIT\` or cursor-based pagination. As the number of cases grows, this will cause slow queries and large response payloads.
+
+## Location
+
+\`backend/routers/cases.py\` – \`get_open_cases()\`:
+\`\`\`python
+cur.execute(
+    """
+    SELECT ... FROM cases c
+    WHERE c.status = 'open' AND c.is_public = TRUE
+    ORDER BY c.created_at DESC
+    """
+)
+\`\`\`
+
+## Recommendation
+
+Add \`limit\` and \`offset\` (or cursor) query parameters:
+\`\`\`python
+@router.get("/cases/open")
+async def get_open_cases(limit: int = 20, offset: int = 0):
+    ...
+    cur.execute("SELECT ... LIMIT %s OFFSET %s", (limit, offset))
+\`\`\`
+
+The same issue exists in \`GET /cases/recommended/{lawyer_id}\` and \`GET /professionals/{user_id}\`.
+
+## Severity
+
+🟡 **Medium**`,
+                labels: ["bug", "performance"]
+              },
+              {
+                title: "[Bug] Placeholder email generated on signup — users cannot provide a real email",
+                body: `## Description
+
+The signup endpoint auto-generates a fake email address (\`{username}@advocateai.local\`) instead of accepting the user's real email. This prevents email-based features such as password reset, notifications, or account verification from ever working.
+
+## Location
+
+\`backend/routers/auth.py\`:
+\`\`\`python
+email = f"{username}@advocateai.local"
+\`\`\`
+
+## Recommendation
+
+1. Add an \`email\` field to the \`SignupRequest\` Pydantic model in \`backend/models/user.py\`.
+2. Validate the email format (e.g., using Pydantic's \`EmailStr\` type).
+3. Check for email uniqueness in the database during signup.
+4. Store the user-provided email rather than a placeholder.
+
+## Severity
+
+🟡 **Medium**`,
+                labels: ["bug"]
+              },
+              {
+                title: "[Performance] No database connection pooling — new connection per request",
+                body: `## Description
+
+Every API request calls \`get_db_connection()\`, which opens a brand-new TCP connection to PostgreSQL. Establishing a connection is expensive (~10–50 ms) and PostgreSQL has a hard limit on the number of simultaneous connections (default: 100). Under moderate load, this will cause significant latency spikes and potential connection exhaustion.
+
+## Location
+
+\`backend/db/database.py\`:
+\`\`\`python
+def get_db_connection():
+    return psycopg2.connect(...)  # new TCP connection every call
+\`\`\`
+
+## Recommendation
+
+Use a connection pool such as \`psycopg2.pool.ThreadedConnectionPool\` or switch to an async-compatible solution like \`asyncpg\` with a pool:
+
+\`\`\`python
+from psycopg2 import pool
+
+_pool = pool.ThreadedConnectionPool(
+    minconn=2, maxconn=20,
+    host=..., database=..., user=..., password=..., port=...
+)
+
+def get_db_connection():
+    return _pool.getconn()
+
+def release_db_connection(conn):
+    _pool.putconn(conn)
+\`\`\`
+
+## Severity
+
+🟠 **High**`,
+                labels: ["performance"]
+              },
+              {
+                title: "[Security] No file size or type validation on document upload endpoint",
+                body: `## Description
+
+The \`POST /documents/analyze\` endpoint accepts file uploads but does not enforce any maximum file size or validate that uploaded files match their declared content type. This can be exploited to:
+- Upload arbitrarily large files, causing out-of-memory errors or disk exhaustion on the server.
+- Upload malicious file types disguised as PDFs or images.
+
+## Location
+
+\`backend/routers/documents.py\` – \`analyze_uploaded_document()\`:
+\`\`\`python
+file_bytes = await upload.read()  # no size check
+\`\`\`
+
+## Recommendation
+
+1. Add a size limit (e.g., 10 MB per file):
+\`\`\`python
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+if len(file_bytes) > MAX_FILE_SIZE:
+    raise HTTPException(status_code=413, detail="File too large. Maximum size is 10 MB.")
+\`\`\`
+
+2. Validate MIME types against an allowlist (\`application/pdf\`, \`image/jpeg\`, \`image/png\`).
+3. Consider streaming uploads instead of reading the entire file into memory.
+
+## Severity
+
+🟠 **High**`,
+                labels: ["bug", "security"]
+              },
+              {
+                title: "[Missing Feature] No input length validation on text fields",
+                body: `## Description
+
+The Pydantic models used for request validation (\`CaseCreateRequest\`, \`MessageSendRequest\`, \`SignupRequest\`, etc.) do not define any maximum length constraints on text fields. Users can submit arbitrarily long strings for titles, descriptions, messages, usernames, and other fields, which will be inserted directly into the database.
+
+## Location
+
+- \`backend/models/case.py\` – \`title\`, \`description\`, \`ai_summary\`, etc.
+- \`backend/models/message.py\` – \`content\`
+- \`backend/models/user.py\` – \`username\`, \`password\`
+- \`backend/models/lawyer.py\` – \`bio\`, \`practice_areas\`, \`languages\`
+
+## Recommendation
+
+Use Pydantic's \`Field\` with \`max_length\` (and optionally \`min_length\`) constraints:
+
+\`\`\`python
+from pydantic import BaseModel, Field
+
+class CaseCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(..., min_length=10, max_length=5000)
+\`\`\`
+
+Also add corresponding \`VARCHAR\` length constraints to the PostgreSQL schema.
+
+## Severity
+
+🟡 **Medium**`,
+                labels: ["enhancement"]
+              },
+              {
+                title: "[Missing Feature] Payment processing not implemented — Premium page is non-functional",
+                body: `## Description
+
+The application includes a Premium pricing page (\`test_app/lib/premium_page.dart\`) with subscription tiers, but there is no backend payment processing integration. The upgrade buttons do not trigger any payment flow, making the premium feature completely non-functional.
+
+## Location
+
+- \`test_app/lib/premium_page.dart\` – UI exists but buttons have no backend action.
+- \`backend/services/integration_placeholders.py\` – Payment integration is listed as a placeholder.
+
+## Recommendation
+
+Integrate a payment provider such as **Stripe** or **PayPal**:
+1. Add a \`POST /payments/create-checkout-session\` endpoint using the Stripe Python SDK.
+2. Handle Stripe webhooks (\`payment_intent.succeeded\`, etc.) to update the user's subscription status in the database.
+3. Store subscription tier and expiry in the \`users\` table.
+4. Gate premium features behind a subscription check.
+
+## Severity
+
+🟡 **Medium**`,
+                labels: ["enhancement"]
+              },
+              {
+                title: "[Testing] No automated backend tests",
+                body: `## Description
+
+The backend has zero automated tests. There are no unit tests, integration tests, or API endpoint tests. The only test file in the repository is a default Flutter widget counter test (\`test_app/test/widget_test.dart\`) that tests a counter widget that doesn't even exist in the app.
+
+## Impact
+
+- Bugs and regressions are only discovered manually or in production.
+- Refactoring is risky without a test safety net.
+- New contributors have no specification of expected behavior.
+
+## Recommendation
+
+Add a test suite using **pytest** and **httpx** (with FastAPI's \`TestClient\`):
+
+\`\`\`python
+# backend/tests/test_auth.py
+from fastapi.testclient import TestClient
+from app import app
+
+client = TestClient(app)
+
+def test_signup_and_login():
+    res = client.post("/signup", json={"username": "testuser", "password": "secret", "role": "client"})
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+
+    res = client.post("/login", json={"username": "testuser", "password": "secret"})
+    assert res.json()["success"] is True
+\`\`\`
+
+Also update the Flutter widget test to test actual app behavior rather than the default counter template.
+
+## Severity
+
+🟡 **Medium**`,
+                labels: ["enhancement", "testing"]
+              }
+            ];
+
+            for (const issue of issues) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issue.title,
+                body: issue.body,
+                labels: issue.labels
+              });
+              console.log(`Created issue: ${issue.title}`);
+            }
