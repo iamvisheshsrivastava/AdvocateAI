@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'case_intelligence_card.dart';
 import 'config.dart';
 
 class CaseWorkspacePage extends StatefulWidget {
@@ -27,6 +28,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   Map<String, dynamic>? caseData;
   List<dynamic> messages = [];
   List<dynamic> timelineEvents = [];
+  Map<String, dynamic> caseIntelligence = {};
   List<Map<String, dynamic>> contacts = [];
   int? selectedReceiverId;
   bool isLoading = true;
@@ -57,12 +59,24 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     setState(() => isLoading = true);
     await Future.wait([
       _loadCaseDetail(),
+      _loadCaseIntelligence(),
       _loadMessages(),
       _loadTimeline(),
       _loadNotificationsTargets(),
     ]);
     if (!mounted) return;
     setState(() => isLoading = false);
+  }
+
+  Future<void> _loadCaseIntelligence() async {
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/insights'),
+    );
+    if (!mounted || response.statusCode != 200) return;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    setState(() {
+      caseIntelligence = data;
+    });
   }
 
   Future<void> _loadCaseDetail() async {
@@ -277,6 +291,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
                     setState(() => isAddingEvent = false);
                     if (response.statusCode == 200) {
                       await _loadTimeline();
+                      await _loadCaseIntelligence();
                     }
                   },
                   child: const Text('Save Event'),
@@ -332,6 +347,14 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
                       ),
                     ),
                   ),
+                  if (caseIntelligence.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    CaseIntelligenceCard(
+                      data: caseIntelligence,
+                      title: 'Workspace Readiness',
+                      accentColor: const Color(0xFF175CD3),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   Card(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),

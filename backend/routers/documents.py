@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+from services.case_intelligence_service import build_case_intelligence
 from services.document_analysis_service import analyze_document, analyze_documents
 from services.matching_service import rank_lawyers
 
@@ -56,6 +57,13 @@ async def analyze_uploaded_document(
             legal_area=analysis.get("legal_area"),
             limit=5,
         )
+        case_intelligence = build_case_intelligence(
+            problem_text=analysis.get("summary", ""),
+            analysis=analysis,
+            case_brief=analysis.get("case_brief") if isinstance(analysis.get("case_brief"), dict) else None,
+            document_names=[name for name, _, _ in payloads],
+            actor_key=actor_key,
+        )
 
         return {
             "document_type": analysis.get("document_type", "Unknown"),
@@ -68,6 +76,7 @@ async def analyze_uploaded_document(
             "citations": analysis.get("citations", []),
             "case_brief": analysis.get("case_brief", {}),
             "documents": analysis.get("documents", []),
+            "case_intelligence": case_intelligence,
             "recommended_lawyers": recommended,
         }
     except ValueError as exc:

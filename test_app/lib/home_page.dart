@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'case_intelligence_card.dart';
 import 'watchlist_page.dart';
 import 'notifications_page.dart';
 import 'config.dart';
@@ -30,12 +31,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool isTyping = false;
   List<Map<String, String>> messages = [];
   Map<String, dynamic>? latestCaseAnalysis;
+  Map<String, dynamic>? latestCaseIntelligence;
   Map<String, dynamic>? latestLegalActionGuide;
   List<dynamic> latestSuggestedLawyers = [];
   String lastUserProblem = "";
   bool showCaseAnalysis = false;
   bool isUploadingDocument = false;
   Map<String, dynamic>? latestDocumentAnalysis;
+  Map<String, dynamic>? latestDocumentIntelligence;
   List<dynamic> latestDocumentRecommendedLawyers = [];
   List<_PendingUpload> pendingUploads = [];
 
@@ -170,16 +173,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
       final analysis = data["analysis"];
       if (analysis is Map<String, dynamic>) {
+        final intelligence = data["case_intelligence"];
         final canPostCase = data["can_post_case"] == true;
         if (canPostCase) {
           latestCaseAnalysis = analysis;
+          latestCaseIntelligence = intelligence is Map<String, dynamic> ? intelligence : null;
           showCaseAnalysis = true;
         } else {
           latestCaseAnalysis = null;
+          latestCaseIntelligence = null;
           showCaseAnalysis = false;
         }
       } else {
         latestCaseAnalysis = null;
+        latestCaseIntelligence = null;
         showCaseAnalysis = false;
       }
 
@@ -350,6 +357,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             'case_brief': data['case_brief'] ?? <String, dynamic>{},
             'documents': data['documents'] ?? <dynamic>[],
           };
+          final intelligence = data['case_intelligence'];
+          latestDocumentIntelligence = intelligence is Map<String, dynamic> ? intelligence : null;
           final lawyers = data['recommended_lawyers'];
           latestDocumentRecommendedLawyers = lawyers is List ? lawyers : [];
           pendingUploads = [];
@@ -593,6 +602,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               _buildCaseAnalysisCard(context),
                             ],
 
+                            if (showCaseAnalysis && (latestCaseIntelligence?.isNotEmpty ?? false)) ...[
+                              const SizedBox(height: 16),
+                              CaseIntelligenceCard(
+                                data: latestCaseIntelligence!,
+                                title: 'Intake Readiness',
+                                accentColor: const Color(0xFF155EEF),
+                              ),
+                            ],
+
                             if (latestLegalActionGuide != null) ...[
                               const SizedBox(height: 16),
                               _buildLegalActionGuideCard(),
@@ -604,6 +622,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             if (latestDocumentAnalysis != null) ...[
                               const SizedBox(height: 16),
                               _buildDocumentAnalysisCard(context),
+                            ],
+
+                            if (latestDocumentIntelligence?.isNotEmpty ?? false) ...[
+                              const SizedBox(height: 16),
+                              CaseIntelligenceCard(
+                                data: latestDocumentIntelligence!,
+                                title: 'Document Readiness',
+                                accentColor: const Color(0xFF027A48),
+                              ),
                             ],
 
                             SizedBox(
@@ -864,6 +891,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           initialUrgency: urgency,
                           initialAiSummary: summary,
                           initialCaseBrief: caseBrief,
+                          initialCaseIntelligence: latestCaseIntelligence,
                         ),
                       ),
                     );
@@ -972,6 +1000,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           initialAiSummary: summary,
                           initialUrgency: 'Medium',
                           initialCaseBrief: caseBrief,
+                          initialCaseIntelligence: latestDocumentIntelligence,
                         ),
                       ),
                     );

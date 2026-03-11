@@ -5,6 +5,7 @@ AdvocateAI is an AI-powered legal-tech platform that helps people understand leg
 It combines:
 - AI legal issue detection
 - AI document analysis
+- AI intake readiness scoring and consultation prep
 - legal action guidance for official government workflows
 - lawyer recommendation
 - client case creation
@@ -28,6 +29,7 @@ It combines:
 - maintain a lawyer watchlist
 - message lawyers inside a case workspace
 - view structured case briefs and timelines
+- review missing intake information, deadline signals, and consultation questions
 
 ### For Lawyers
 - create a lawyer profile
@@ -48,6 +50,7 @@ It combines:
 - role-based client/lawyer flows
 - case marketplace workflow
 - legal document analysis for PDF and image uploads
+- case intelligence cards with readiness score, missing-info prompts, risk flags, and key dates
 - Redis-backed optional caching and AI rate limiting
 - structured case briefs stored on cases
 - notifications for applications, messages, and recommendations
@@ -134,8 +137,10 @@ flutter run -d chrome
 - signup / login
 - persistent session handling
 - AI legal issue analysis with Germany-aware disclaimers, confidence, and recommended actions
+- AI-powered intake readiness report with missing information, follow-up questions, risk flags, and consultation prep
 - Legal Action Guide for lost phone, consumer complaint, tenant dispute, and employment complaint scenarios
 - AI document upload analysis for single or multi-file packets
+- workspace-level case intelligence that updates alongside timelines and key dates
 - lawyer recommendations with explainable match reasons and availability filtering
 - watchlist
 - case creation and listing with structured case briefs

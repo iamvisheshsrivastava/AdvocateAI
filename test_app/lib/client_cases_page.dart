@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'case_intelligence_card.dart';
 import 'case_workspace_page.dart';
 import 'config.dart';
 
@@ -16,6 +17,7 @@ class CreateCasePage extends StatefulWidget {
   final String? initialUrgency;
   final String? initialAiSummary;
   final Map<String, dynamic>? initialCaseBrief;
+  final Map<String, dynamic>? initialCaseIntelligence;
 
   const CreateCasePage({
     super.key,
@@ -27,6 +29,7 @@ class CreateCasePage extends StatefulWidget {
     this.initialUrgency,
     this.initialAiSummary,
     this.initialCaseBrief,
+    this.initialCaseIntelligence,
   });
 
   @override
@@ -48,6 +51,7 @@ class _CreateCasePageState extends State<CreateCasePage> {
   String urgency = 'Medium';
   int? createdCaseId;
   Map<String, dynamic> caseBrief = {};
+  Map<String, dynamic> caseIntelligence = {};
   Map<String, dynamic> analysis = {};
   List<dynamic> suggestions = [];
 
@@ -63,6 +67,7 @@ class _CreateCasePageState extends State<CreateCasePage> {
     issueTypeController.text = issueType;
     aiSummary = widget.initialAiSummary ?? '';
     caseBrief = Map<String, dynamic>.from(widget.initialCaseBrief ?? <String, dynamic>{});
+    caseIntelligence = Map<String, dynamic>.from(widget.initialCaseIntelligence ?? <String, dynamic>{});
     final initialUrgency = (widget.initialUrgency ?? 'Medium').trim();
     urgency = const ['Low', 'Medium', 'High'].contains(initialUrgency)
         ? initialUrgency
@@ -131,6 +136,9 @@ class _CreateCasePageState extends State<CreateCasePage> {
           urgency = data['urgency']?.toString() ?? urgency;
           suggestions = data['suggested_lawyers'] as List<dynamic>? ?? <dynamic>[];
           caseBrief = Map<String, dynamic>.from(data['case_brief'] as Map? ?? <String, dynamic>{});
+          caseIntelligence = Map<String, dynamic>.from(
+            data['case_intelligence'] as Map? ?? <String, dynamic>{},
+          );
           analysis = Map<String, dynamic>.from(data['analysis'] as Map? ?? <String, dynamic>{});
           legalAreaController.text = legalArea;
           issueTypeController.text = issueType;
@@ -286,6 +294,13 @@ class _CreateCasePageState extends State<CreateCasePage> {
                   issueType: issueType,
                   urgency: urgency,
                   analysis: analysis,
+                ),
+              ],
+              if (caseIntelligence.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                CaseIntelligenceCard(
+                  data: caseIntelligence,
+                  title: 'Case Readiness',
                 ),
               ],
               if (caseBrief.isNotEmpty) ...[

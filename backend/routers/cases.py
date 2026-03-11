@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query
 from db.database import get_db_connection
 from models.case import CaseApplyRequest, CaseCreateRequest, CaseEventRequest
 from services.ai_service import analyze_legal_problem, build_case_brief, LEGAL_DEFAULT_AREA
+from services.case_intelligence_service import build_case_intelligence
 from services.matching_service import rank_lawyers, refresh_lawyer_responsiveness
 from services.notification_service import create_notification
 
@@ -113,6 +114,42 @@ def _case_row_to_dict(row: tuple) -> dict:
     }
 
 
+def _fetch_case_row(case_id: int) -> tuple | None:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT case_id, client_id, title, description, legal_area, issue_type, ai_summary, urgency,
+               city, case_brief, created_at, status, is_public
+        FROM cases
+        WHERE case_id = %s
+        """,
+        (case_id,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def _build_case_intelligence_from_row(row: tuple, timeline_events: list[dict] | None = None) -> dict:
+    payload = _case_row_to_dict(row)
+    analysis = {
+        "legal_area": payload["legal_area"],
+        "issue_type": payload["issue_type"],
+        "summary": payload["ai_summary"] or payload["description"],
+        "urgency": payload["urgency"],
+        "location": payload["city"],
+    }
+    return build_case_intelligence(
+        problem_text=f"{payload['title']}. {payload['description']}".strip(),
+        analysis=analysis,
+        case_brief=payload.get("case_brief") or {},
+        timeline_events=timeline_events or [],
+        actor_key=f"user:{payload['client_id']}",
+    )
+
+
 def _fallback_recommended_case(row: tuple) -> dict:
     return {
         "case_id": row[0],
@@ -174,9 +211,16 @@ async def create_case(data: CaseCreateRequest):
     if not _is_role(data.client_id, "client"):
         return {"success": False, "message": "Only client users can create cases."}
 
-    analysis = analyze_legal_problem(f"{data.title}. {data.description}".strip(), actor_key=f"user:{data.client_id}")
+    problem_text = f"{data.title}. {data.description}".strip()
+    analysis = analyze_legal_problem(problem_text, actor_key=f"user:{data.client_id}")
     payload = _build_case_defaults(data, analysis)
     case_id, created_at = _insert_case(data, payload)
+    case_intelligence = build_case_intelligence(
+        problem_text=problem_text,
+        analysis=analysis,
+        case_brief=payload["case_brief"],
+        actor_key=f"user:{data.client_id}",
+    )
 
     suggestions_query = f"{data.title} {data.description} {payload['legal_area']} {payload['issue_type']}".strip()
     suggested_lawyers = rank_lawyers(
@@ -204,6 +248,7 @@ async def create_case(data: CaseCreateRequest):
         "location": payload["city"],
         "ai_summary": payload["ai_summary"],
         "case_brief": payload["case_brief"],
+        "case_intelligence": case_intelligence,
         "analysis": analysis,
         "suggested_lawyers": suggested_lawyers,
     }
@@ -232,25 +277,48 @@ async def get_my_cases(client_id: Annotated[int, Query()]):
 
 @router.get("/cases/{case_id}")
 async def get_case_detail(case_id: int):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT case_id, client_id, title, description, legal_area, issue_type, ai_summary, urgency,
-               city, case_brief, created_at, status, is_public
-        FROM cases
-        WHERE case_id = %s
-        """,
-        (case_id,),
-    )
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    row = _fetch_case_row(case_id)
 
     if not row:
         return {}
 
-    return _case_row_to_dict(row)
+    payload = _case_row_to_dict(row)
+    payload["case_intelligence"] = _build_case_intelligence_from_row(row)
+    return payload
+
+
+@router.get("/cases/{case_id}/insights")
+async def get_case_insights(case_id: int):
+    row = _fetch_case_row(case_id)
+    if not row:
+        return {}
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, description, event_date, created_at
+        FROM case_events
+        WHERE case_id = %s
+        ORDER BY event_date ASC, created_at ASC
+        """,
+        (case_id,),
+    )
+    events = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    timeline_events = [
+        {
+            "id": event[0],
+            "description": event[1],
+            "event_date": str(event[2]),
+            "created_at": str(event[3]),
+        }
+        for event in events
+    ]
+
+    return _build_case_intelligence_from_row(row, timeline_events=timeline_events)
 
 
 @router.get("/cases/client/{client_id}")
