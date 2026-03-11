@@ -1,0 +1,24 @@
+name: Create Issues
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/create_issues.py'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub issues for identified bugs and improvements
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/create_issues.py
