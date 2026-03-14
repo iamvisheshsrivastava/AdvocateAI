@@ -1,9 +1,16 @@
 import json
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 from db.database import get_db_connection
-from models.case import CaseApplyRequest, CaseCreateRequest, CaseEventRequest
+from models.case import (
+    CaseApplicationDecisionRequest,
+    CaseApplyRequest,
+    CaseCloseRequest,
+    CaseCreateRequest,
+    CaseEventRequest,
+)
 from services.ai_service import analyze_legal_problem, build_case_brief, LEGAL_DEFAULT_AREA
 from services.case_intelligence_service import build_case_intelligence
 from services.matching_service import rank_lawyers, refresh_lawyer_responsiveness
@@ -130,6 +137,25 @@ def _fetch_case_row(case_id: int) -> tuple | None:
     cur.close()
     conn.close()
     return row
+
+
+def _get_accepted_lawyer_id(case_id: int) -> int | None:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT lawyer_id
+        FROM case_applications
+        WHERE case_id = %s AND status = 'accepted'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (case_id,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return int(row[0]) if row else None
 
 
 def _build_case_intelligence_from_row(row: tuple, timeline_events: list[dict] | None = None) -> dict:
@@ -283,6 +309,7 @@ async def get_case_detail(case_id: int):
         return {}
 
     payload = _case_row_to_dict(row)
+    payload["accepted_lawyer_id"] = _get_accepted_lawyer_id(case_id)
     payload["case_intelligence"] = _build_case_intelligence_from_row(row)
     return payload
 
@@ -450,6 +477,228 @@ async def apply_to_case(data: CaseApplyRequest):
         notification_type="application",
     )
     return {"success": True}
+
+
+@router.post("/cases/{case_id}/applications/{application_id}/decision")
+async def decide_case_application(
+    case_id: int,
+    application_id: int,
+    data: CaseApplicationDecisionRequest,
+):
+    decision = data.decision.strip().lower()
+    if decision not in ("accepted", "rejected"):
+        return {
+            "success": False,
+            "message": "Decision must be either 'accepted' or 'rejected'.",
+        }
+
+    if not _is_role(data.client_id, "client"):
+        return {
+            "success": False,
+            "message": "Only client users can review case applications.",
+        }
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT client_id, status, title
+        FROM cases
+        WHERE case_id = %s
+        """,
+        (case_id,),
+    )
+    case_row = cur.fetchone()
+    if not case_row:
+        cur.close()
+        conn.close()
+        return {"success": False, "message": "Case not found."}
+
+    if int(case_row[0]) != data.client_id:
+        cur.close()
+        conn.close()
+        return {
+            "success": False,
+            "message": "Only the case owner can review applications.",
+        }
+
+    if str(case_row[1] or "open").lower() != "open":
+        cur.close()
+        conn.close()
+        return {"success": False, "message": "Case is not open for application review."}
+
+    cur.execute(
+        """
+        SELECT lawyer_id, status
+        FROM case_applications
+        WHERE id = %s AND case_id = %s
+        """,
+        (application_id, case_id),
+    )
+    current_application = cur.fetchone()
+    if not current_application:
+        cur.close()
+        conn.close()
+        return {"success": False, "message": "Application not found for this case."}
+
+    target_lawyer_id = int(current_application[0])
+    previous_status = str(current_application[1] or "submitted").strip().lower()
+
+    cur.execute(
+        """
+        UPDATE case_applications
+        SET status = %s
+        WHERE id = %s AND case_id = %s
+        RETURNING lawyer_id
+        """,
+        (decision, application_id, case_id),
+    )
+    updated = cur.fetchone()
+    if not updated:
+        cur.close()
+        conn.close()
+        return {"success": False, "message": "Failed to update application status."}
+
+    affected_other_lawyers: list[int] = []
+    if decision == "accepted":
+        cur.execute(
+            """
+            UPDATE case_applications
+            SET status = 'rejected'
+            WHERE case_id = %s
+              AND id <> %s
+              AND status IN ('submitted', 'accepted')
+            RETURNING lawyer_id
+            """,
+            (case_id, application_id),
+        )
+        affected_other_lawyers = [int(row[0]) for row in cur.fetchall()]
+
+        cur.execute(
+            """
+            INSERT INTO case_events (case_id, description, event_date)
+            VALUES (%s, %s, %s)
+            """,
+            (case_id, f"Client accepted lawyer #{target_lawyer_id}'s application.", date.today()),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO case_events (case_id, description, event_date)
+            VALUES (%s, %s, %s)
+            """,
+            (case_id, f"Client rejected lawyer #{target_lawyer_id}'s application.", date.today()),
+        )
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if decision == "accepted" and previous_status != "accepted":
+        refresh_lawyer_responsiveness(target_lawyer_id, increment_cases_accepted=True)
+
+    create_notification(
+        user_id=target_lawyer_id,
+        message=f"Your application for case #{case_id} was {decision}.",
+        notification_type="application",
+    )
+    for lawyer_id in affected_other_lawyers:
+        if lawyer_id == target_lawyer_id:
+            continue
+        create_notification(
+            user_id=lawyer_id,
+            message=f"Case #{case_id} selected another lawyer for this matter.",
+            notification_type="application",
+        )
+
+    return {
+        "success": True,
+        "case_id": case_id,
+        "application_id": application_id,
+        "decision": decision,
+    }
+
+
+@router.post("/cases/{case_id}/close")
+async def close_case(case_id: int, data: CaseCloseRequest):
+    if not _is_role(data.client_id, "client"):
+        return {"success": False, "message": "Only client users can close cases."}
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT client_id, status
+        FROM cases
+        WHERE case_id = %s
+        """,
+        (case_id,),
+    )
+    case_row = cur.fetchone()
+    if not case_row:
+        cur.close()
+        conn.close()
+        return {"success": False, "message": "Case not found."}
+
+    if int(case_row[0]) != data.client_id:
+        cur.close()
+        conn.close()
+        return {"success": False, "message": "Only the case owner can close this case."}
+
+    if str(case_row[1] or "open").lower() == "closed":
+        cur.close()
+        conn.close()
+        return {"success": True, "case_id": case_id, "status": "closed"}
+
+    cur.execute(
+        """
+        UPDATE cases
+        SET status = 'closed'
+        WHERE case_id = %s
+        """,
+        (case_id,),
+    )
+
+    reason = (data.reason or "Client marked the case as closed.").strip()
+    cur.execute(
+        """
+        INSERT INTO case_events (case_id, description, event_date)
+        VALUES (%s, %s, %s)
+        """,
+        (case_id, reason, date.today()),
+    )
+
+    cur.execute(
+        """
+        SELECT lawyer_id
+        FROM case_applications
+        WHERE case_id = %s AND status = 'accepted'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (case_id,),
+    )
+    accepted = cur.fetchone()
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    if accepted:
+        create_notification(
+            user_id=int(accepted[0]),
+            message=f"Case #{case_id} has been closed by the client.",
+            notification_type="case",
+        )
+
+    create_notification(
+        user_id=data.client_id,
+        message=f"Case #{case_id} was closed.",
+        notification_type="case",
+    )
+
+    return {"success": True, "case_id": case_id, "status": "closed"}
 
 
 @router.get("/cases/applications/{lawyer_id}")

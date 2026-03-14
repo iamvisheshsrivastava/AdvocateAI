@@ -25,3 +25,13 @@ class CaseApplyRequest(BaseModel):
 class CaseEventRequest(BaseModel):
     description: str
     event_date: str
+
+
+class CaseApplicationDecisionRequest(BaseModel):
+    client_id: int
+    decision: str
+
+
+class CaseCloseRequest(BaseModel):
+    client_id: int
+    reason: str | None = None

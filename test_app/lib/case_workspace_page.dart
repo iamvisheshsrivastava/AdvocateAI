@@ -28,13 +28,16 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   Map<String, dynamic>? caseData;
   List<dynamic> messages = [];
   List<dynamic> timelineEvents = [];
+  List<dynamic> applications = [];
   Map<String, dynamic> caseIntelligence = {};
   List<Map<String, dynamic>> contacts = [];
   int? selectedReceiverId;
   bool isLoading = true;
   bool isSending = false;
   bool isAddingEvent = false;
+  bool isClosingCase = false;
   String timelineSummary = '';
+  final Set<int> pendingApplicationUpdates = <int>{};
   Timer? refreshTimer;
 
   @override
@@ -42,6 +45,8 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     super.initState();
     _loadWorkspace();
     refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      _loadCaseDetail();
+      _loadApplications();
       _loadMessages();
       _loadNotificationsTargets();
     });
@@ -62,6 +67,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
       _loadCaseIntelligence(),
       _loadMessages(),
       _loadTimeline(),
+      _loadApplications(),
       _loadNotificationsTargets(),
     ]);
     if (!mounted) return;
@@ -120,6 +126,17 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     setState(() {
       timelineEvents = (data['items'] as List<dynamic>? ?? <dynamic>[]);
       timelineSummary = data['timeline_summary']?.toString() ?? '';
+    });
+  }
+
+  Future<void> _loadApplications() async {
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/applications'),
+    );
+    if (!mounted || response.statusCode != 200) return;
+    final items = jsonDecode(response.body) as List<dynamic>;
+    setState(() {
+      applications = items;
     });
   }
 
@@ -304,13 +321,130 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     );
   }
 
+  Future<void> _reviewApplication(int applicationId, String decision) async {
+    setState(() => pendingApplicationUpdates.add(applicationId));
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/applications/$applicationId/decision'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'client_id': widget.currentUserId,
+        'decision': decision,
+      }),
+    );
+
+    if (!mounted) return;
+
+    setState(() => pendingApplicationUpdates.remove(applicationId));
+
+    if (response.statusCode == 200) {
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (payload['success'] == true) {
+        await Future.wait([
+          _loadApplications(),
+          _loadCaseDetail(),
+          _loadTimeline(),
+          _loadCaseIntelligence(),
+          _loadNotificationsTargets(),
+        ]);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Application ${decision.toLowerCase()} successfully.')),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(payload['message']?.toString() ?? 'Could not update application.')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to update application.')),
+    );
+  }
+
+  Future<void> _closeCase() async {
+    final shouldClose = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Close Case'),
+          content: const Text('This will mark the case as closed and notify the selected lawyer.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Close Case'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldClose != true) return;
+
+    setState(() => isClosingCase = true);
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/close'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'client_id': widget.currentUserId,
+        'reason': 'Client marked this case as closed from workspace.',
+      }),
+    );
+
+    if (!mounted) return;
+
+    setState(() => isClosingCase = false);
+
+    if (response.statusCode == 200) {
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (payload['success'] == true) {
+        await Future.wait([
+          _loadCaseDetail(),
+          _loadTimeline(),
+          _loadCaseIntelligence(),
+        ]);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Case closed successfully.')),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(payload['message']?.toString() ?? 'Could not close case.')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to close case.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final caseBrief = (caseData?['case_brief'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+    final isCaseOwner = caseData?['client_id'] == widget.currentUserId;
+    final isCaseOpen = (caseData?['status']?.toString().toLowerCase() ?? 'open') == 'open';
 
     return Scaffold(
       appBar: AppBar(
         title: Text(caseData?['title']?.toString() ?? 'Case Workspace'),
+        actions: [
+          if (isCaseOwner && isCaseOpen)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: TextButton.icon(
+                onPressed: isClosingCase ? null : _closeCase,
+                icon: const Icon(Icons.task_alt),
+                label: Text(isClosingCase ? 'Closing...' : 'Close Case'),
+              ),
+            ),
+        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -341,12 +475,15 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
                               _InfoChip(label: 'Issue Type', value: caseData?['issue_type']?.toString() ?? 'General Inquiry'),
                               _InfoChip(label: 'Urgency', value: caseData?['urgency']?.toString() ?? 'Medium'),
                               _InfoChip(label: 'City', value: caseData?['city']?.toString() ?? 'Unknown'),
+                              _InfoChip(label: 'Status', value: caseData?['status']?.toString() ?? 'open'),
                             ],
                           ),
                         ],
                       ),
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  _buildApplicationsCard(isCaseOwner: isCaseOwner, isCaseOpen: isCaseOpen),
                   if (caseIntelligence.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     CaseIntelligenceCard(
@@ -518,6 +655,89 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     );
   }
 
+  Widget _buildApplicationsCard({required bool isCaseOwner, required bool isCaseOpen}) {
+    final acceptedExists = applications.any(
+      (item) => (item as Map<String, dynamic>)['status']?.toString().toLowerCase() == 'accepted',
+    );
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Case Applications',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            if (applications.isEmpty)
+              const Text('No applications yet for this case.')
+            else
+              ...applications.map((item) {
+                final application = item as Map<String, dynamic>;
+                final applicationId = application['id'] as int;
+                final status = application['status']?.toString().toLowerCase() ?? 'submitted';
+                final isPending = pendingApplicationUpdates.contains(applicationId);
+                final canReview =
+                    isCaseOwner && isCaseOpen && status == 'submitted' && !acceptedExists;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE2E8F7)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              application['lawyer_name']?.toString() ?? 'Lawyer',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          _StatusBadge(status: status),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(application['message']?.toString() ?? ''),
+                      if (canReview) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: isPending
+                                  ? null
+                                  : () => _reviewApplication(applicationId, 'rejected'),
+                              icon: const Icon(Icons.close),
+                              label: const Text('Reject'),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: isPending
+                                  ? null
+                                  : () => _reviewApplication(applicationId, 'accepted'),
+                              icon: const Icon(Icons.check),
+                              label: Text(isPending ? 'Saving...' : 'Accept'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTimelineCard() {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -655,4 +875,32 @@ List<String> _asStringList(dynamic raw) {
     return [raw.trim()];
   }
   return <String>[];
+}
+
+class _StatusBadge extends StatelessWidget {
+  final String status;
+
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = status.toLowerCase();
+    final color = switch (normalized) {
+      'accepted' => const Color(0xFF117A41),
+      'rejected' => const Color(0xFFB42318),
+      _ => const Color(0xFF1E63E9),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        normalized,
+        style: TextStyle(color: color, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
 }
