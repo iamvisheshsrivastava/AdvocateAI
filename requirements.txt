@@ -8,3 +8,6 @@ requests
 pdfplumber
 python-multipart
 redis
+langchain
+llama-index-core
+pymupdf

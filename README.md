@@ -9,6 +9,9 @@ The current build is focused on making the first steps of legal help easier: und
 - AI chat to understand a legal problem in plain language
 - AI case analysis with a simple summary, urgency signals, and next-step guidance
 - document upload and analysis for PDFs and images
+- document batch storage with follow-up question answering over uploaded files
+- structured extraction for parties, deadlines, amounts, obligations, and risks
+- LangChain-backed prompting with LlamaIndex retrieval for document QA
 - legal action guidance for supported common situations
 - lawyer recommendations based on the case details
 - case creation, case tracking, and case workspace collaboration
@@ -22,6 +25,7 @@ The current build is focused on making the first steps of legal help easier: und
 - describe a legal problem and get AI guidance
 - upload one or more legal documents for analysis
 - receive a case summary and intake-readiness insights
+- ask follow-up questions against the uploaded document batch
 - view suggested lawyers for their issue
 - create and manage cases
 - keep a lawyer watchlist
@@ -43,6 +47,7 @@ The current build is focused on making the first steps of legal help easier: und
 
 - the current dataset is centered on Germany-based lawyers and legal flows
 - the app already supports an end-to-end prototype experience for discovery, case intake, and lawyer connection
+- uploaded document batches are stored for later Q&A and retrieval-based follow-up
 - some areas are still early-stage, including payments and long-term production storage workflows
 
 ## Screenshots

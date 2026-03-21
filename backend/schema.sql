@@ -189,6 +189,33 @@ CREATE TABLE IF NOT EXISTS case_events (
 CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id);
 
 -- ==============================
+-- CASE DOCUMENTS TABLE
+-- ==============================
+CREATE TABLE IF NOT EXISTS case_documents (
+    id SERIAL PRIMARY KEY,
+    batch_id TEXT NOT NULL,
+    user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    case_id INT REFERENCES cases(case_id) ON DELETE SET NULL,
+    file_name TEXT NOT NULL,
+    content_type TEXT,
+    page_count INT,
+    document_type TEXT,
+    legal_area TEXT,
+    extracted_text TEXT,
+    structured_json JSONB DEFAULT '{}'::jsonb,
+    summary TEXT,
+    potential_issue TEXT,
+    recommended_action TEXT,
+    confidence_level TEXT,
+    citations JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_documents_batch_id ON case_documents(batch_id);
+CREATE INDEX IF NOT EXISTS idx_case_documents_user_id ON case_documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_case_documents_case_id ON case_documents(case_id);
+
+-- ==============================
 -- AUDIT LOGS TABLE
 -- ==============================
 CREATE TABLE IF NOT EXISTS audit_logs (

@@ -24,6 +24,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final TextEditingController messageController = TextEditingController();
+  final TextEditingController documentQuestionController = TextEditingController();
   final ScrollController scrollController = ScrollController();
 
   String userEmail = "";
@@ -39,7 +40,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool isUploadingDocument = false;
   Map<String, dynamic>? latestDocumentAnalysis;
   Map<String, dynamic>? latestDocumentIntelligence;
+  Map<String, dynamic>? latestDocumentQa;
   List<dynamic> latestDocumentRecommendedLawyers = [];
+  String? latestDocumentBatchId;
   List<_PendingUpload> pendingUploads = [];
 
   final ImagePicker imagePicker = ImagePicker();
@@ -55,6 +58,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     messageController.dispose();
+    documentQuestionController.dispose();
     scrollController.dispose();
     super.dispose();
   }
@@ -345,6 +349,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         setState(() {
+          latestDocumentBatchId = data['document_batch_id']?.toString();
           latestDocumentAnalysis = {
             'document_type': data['document_type'] ?? 'Unknown',
             'legal_area': data['legal_area'] ?? 'General Legal',
@@ -354,6 +359,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             'recommended_action': data['recommended_action'] ?? '',
             'confidence_level': data['confidence_level'] ?? 'Medium',
             'citations': data['citations'] ?? <dynamic>[],
+            'structured_extraction': data['structured_extraction'] ?? <String, dynamic>{},
+            'retrieved_snippets': data['retrieved_snippets'] ?? <dynamic>[],
             'case_brief': data['case_brief'] ?? <String, dynamic>{},
             'documents': data['documents'] ?? <dynamic>[],
           };
@@ -361,6 +368,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           latestDocumentIntelligence = intelligence is Map<String, dynamic> ? intelligence : null;
           final lawyers = data['recommended_lawyers'];
           latestDocumentRecommendedLawyers = lawyers is List ? lawyers : [];
+          latestDocumentQa = null;
           pendingUploads = [];
         });
       } else {
@@ -372,6 +380,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error uploading document.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isUploadingDocument = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _askAboutLatestDocuments() async {
+    final batchId = latestDocumentBatchId;
+    final question = documentQuestionController.text.trim();
+    if (batchId == null || batchId.isEmpty || question.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      isUploadingDocument = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/documents/qa'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'document_batch_id': batchId,
+          'question': question,
+          'user_id': userId,
+        }),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          latestDocumentQa = data;
+        });
+        documentQuestionController.clear();
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Document question failed.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error asking about documents.')),
       );
     } finally {
       if (mounted) {
@@ -631,6 +689,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 title: 'Document Readiness',
                                 accentColor: const Color(0xFF027A48),
                               ),
+                            ],
+
+                            if (latestDocumentBatchId != null) ...[
+                              const SizedBox(height: 16),
+                              _buildDocumentQaCard(),
                             ],
 
                             SizedBox(
@@ -918,6 +981,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final citations = _dynamicListToText(analysis['citations']);
     final caseBrief = Map<String, dynamic>.from(analysis['case_brief'] as Map? ?? <String, dynamic>{});
     final documents = analysis['documents'] as List<dynamic>? ?? <dynamic>[];
+    final structured = Map<String, dynamic>.from(
+      analysis['structured_extraction'] as Map? ?? <String, dynamic>{},
+    );
+    final retrievedSnippets = analysis['retrieved_snippets'] as List<dynamic>? ?? <dynamic>[];
 
     return Card(
       elevation: 0,
@@ -965,6 +1032,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (citations.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text('Citations: ${citations.join(' • ')}'),
+            ],
+            if (structured.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _DocumentStructuredSection(title: 'Parties', values: _dynamicListToText(structured['parties'])),
+              _DocumentStructuredSection(title: 'Deadlines', values: _dynamicListToText(structured['deadlines'])),
+              _DocumentStructuredSection(title: 'Amounts', values: _dynamicListToText(structured['amounts'])),
+              _DocumentStructuredSection(title: 'Obligations', values: _dynamicListToText(structured['obligations'])),
+              _DocumentStructuredSection(title: 'Risks', values: _dynamicListToText(structured['risks'])),
+            ],
+            if (retrievedSnippets.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Retrieved snippets', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              ...retrievedSnippets.take(3).map((item) {
+                final snippet = item is Map<String, dynamic> ? item : <String, dynamic>{};
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Text(
+                    '${snippet['file_name'] ?? 'Document'}: ${snippet['snippet'] ?? ''}',
+                    style: const TextStyle(height: 1.35),
+                  ),
+                );
+              }),
             ],
             const SizedBox(height: 12),
             Wrap(
@@ -1016,6 +1112,87 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildDocumentQaCard() {
+    final qa = latestDocumentQa ?? <String, dynamic>{};
+    final supportingDocuments = _dynamicListToText(qa['supporting_documents']);
+    final followUps = _dynamicListToText(qa['follow_up_questions']);
+    final snippets = qa['retrieved_snippets'] as List<dynamic>? ?? <dynamic>[];
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.purple.shade100),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.question_answer_outlined, color: Color(0xFF7B2CBF)),
+                SizedBox(width: 8),
+                Text(
+                  'Document Q&A',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: documentQuestionController,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Ask about the uploaded documents',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: isUploadingDocument || latestDocumentBatchId == null
+                    ? null
+                    : _askAboutLatestDocuments,
+                icon: const Icon(Icons.search),
+                label: Text(isUploadingDocument ? 'Thinking...' : 'Ask documents'),
+              ),
+            ),
+            if ((qa['answer'] ?? '').toString().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F3FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  qa['answer'].toString(),
+                  style: const TextStyle(height: 1.35),
+                ),
+              ),
+            ],
+            if (supportingDocuments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Supporting documents: ${supportingDocuments.join(' • ')}'),
+            ],
+            if (snippets.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Evidence snippets: ${snippets.length}'),
+            ],
+            if (followUps.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Follow-up questions: ${followUps.join(' • ')}'),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDocumentCaptureCard() {
     return Card(
       elevation: 0,
@@ -1024,6 +1201,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         side: BorderSide(color: Colors.orange.shade100),
       ),
       child: Padding(
+
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1302,6 +1480,38 @@ class _AnimatedTextState extends State<AnimatedText> {
   @override
   Widget build(BuildContext context) {
     return Text(displayedText);
+  }
+}
+
+class _DocumentStructuredSection extends StatelessWidget {
+  final String title;
+  final List<String> values;
+
+  const _DocumentStructuredSection({required this.title, required this.values});
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = values.where((item) => item.trim().isNotEmpty).toList();
+    if (normalized.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          ...normalized.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text('• $item'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -2,8 +2,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+from models.document import DocumentQuestionRequest
 from services.case_intelligence_service import build_case_intelligence
 from services.document_analysis_service import analyze_document, analyze_documents
+from services.document_intelligence_service import answer_document_question
 from services.matching_service import rank_lawyers
 
 router = APIRouter(tags=["documents"])
@@ -40,9 +42,15 @@ async def analyze_uploaded_document(
 
         actor_key = f"user:{user_id}" if user_id is not None else "anonymous"
         analysis = (
-            analyze_documents(payloads, actor_key=actor_key)
+            analyze_documents(payloads, actor_key=actor_key, user_id=user_id)
             if len(payloads) > 1
-            else analyze_document(payloads[0][0], payloads[0][1], payloads[0][2], actor_key=actor_key)
+            else analyze_document(
+                payloads[0][0],
+                payloads[0][1],
+                payloads[0][2],
+                actor_key=actor_key,
+                user_id=user_id,
+            )
         )
 
         query = (
@@ -66,6 +74,7 @@ async def analyze_uploaded_document(
         )
 
         return {
+            "document_batch_id": analysis.get("document_batch_id"),
             "document_type": analysis.get("document_type", "Unknown"),
             "legal_area": analysis.get("legal_area", "General Legal"),
             "key_dates": analysis.get("key_dates", []),
@@ -74,6 +83,8 @@ async def analyze_uploaded_document(
             "recommended_action": analysis.get("recommended_action", ""),
             "confidence_level": analysis.get("confidence_level", "Low"),
             "citations": analysis.get("citations", []),
+            "structured_extraction": analysis.get("structured_extraction", {}),
+            "retrieved_snippets": analysis.get("retrieved_snippets", []),
             "case_brief": analysis.get("case_brief", {}),
             "documents": analysis.get("documents", []),
             "case_intelligence": case_intelligence,
@@ -85,3 +96,27 @@ async def analyze_uploaded_document(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to analyze document.") from exc
+
+
+@router.post(
+    "/documents/qa",
+    responses={
+        400: {"description": "Question or batch ID missing."},
+        404: {"description": "No uploaded documents found for the batch."},
+        500: {"description": "Document QA failed."},
+    },
+)
+async def ask_document_question(request: DocumentQuestionRequest):
+    try:
+        answer = answer_document_question(
+            batch_id=request.document_batch_id,
+            question=request.question,
+            actor_key=f"user:{request.user_id}" if request.user_id is not None else "anonymous",
+        )
+        return answer
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to answer document question.") from exc
