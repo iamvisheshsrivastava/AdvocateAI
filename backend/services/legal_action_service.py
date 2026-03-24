@@ -3,6 +3,7 @@ from pathlib import Path
 
 from services.ai_service import GEMINI_API_KEY, call_gemini, extract_json_object
 from services.cache_service import cache_service
+from services.mlops_service import get_ai_config
 
 SUPPORTED_WORKFLOWS = {
     "lost_phone": ["lost phone", "lost mobile", "phone stolen", "mobile stolen", "imei", "stolen phone"],
@@ -61,7 +62,16 @@ User problem:
 """
 
     try:
-        parsed = extract_json_object(call_gemini(prompt, timeout_seconds=20))
+        parsed = extract_json_object(
+            call_gemini(
+                prompt,
+                timeout_seconds=get_ai_config().brief_timeout_seconds,
+                telemetry={
+                    "event_name": "legal_action_classification",
+                    "input_length": len(problem_description),
+                },
+            )
+        )
         issue_type = str(parsed.get("issue_type") or fallback).strip().lower()
         if issue_type not in LEGAL_ACTIONS:
             issue_type = fallback

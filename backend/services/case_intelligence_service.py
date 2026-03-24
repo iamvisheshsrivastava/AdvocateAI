@@ -5,6 +5,7 @@ from typing import Any
 
 from services.ai_service import GEMINI_API_KEY, LEGAL_DEFAULT_AREA, call_gemini, extract_json_object
 from services.cache_service import cache_service
+from services.mlops_service import get_ai_config
 
 
 def _as_list(value: Any) -> list[str]:
@@ -383,7 +384,18 @@ Document names:
 """
 
     try:
-        parsed = extract_json_object(call_gemini(prompt, timeout_seconds=25))
+        parsed = extract_json_object(
+            call_gemini(
+                prompt,
+                timeout_seconds=get_ai_config().analysis_timeout_seconds,
+                telemetry={
+                    "event_name": "case_intelligence_analysis",
+                    "input_length": len(problem_text),
+                    "timeline_count": len(timeline_events or []),
+                    "document_count": len(document_names or []),
+                },
+            )
+        )
         if not isinstance(parsed, dict):
             cache_service.set(cache_key, fallback, ttl_seconds=1800)
             return fallback

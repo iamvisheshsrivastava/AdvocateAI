@@ -11,3 +11,6 @@ redis
 langchain
 llama-index-core
 pymupdf
+hydra-core
+mlflow
+wandb

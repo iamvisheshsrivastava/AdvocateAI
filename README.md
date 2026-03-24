@@ -18,6 +18,7 @@ The current build is focused on making the first steps of legal help easier: und
 - client-lawyer messaging inside the case workspace
 - notifications for messages, applications, and recommendations
 - separate client and lawyer experiences
+- optional MLOps instrumentation for AI runs via Hydra-backed config, MLflow, and Weights & Biases
 
 ## What Clients Can Do
 
@@ -83,6 +84,19 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Create a `.env` file inside `backend/` with the required database and API key settings.
+
+Optional MLOps settings:
+
+- `MLOPS_ENABLED=true|false`
+- `MLFLOW_ENABLED=true|false`
+- `MLFLOW_TRACKING_URI` for a local or remote MLflow server
+- `MLFLOW_EXPERIMENT_NAME`
+- `WANDB_ENABLED=true|false`
+- `WANDB_PROJECT`
+- `WANDB_ENTITY`
+- `WANDB_MODE` such as `offline` or `disabled`
+
+The default backend config lives in `backend/conf/mlops.yaml`. Tracking is local and non-invasive unless you enable the environment flags above.
 
 ### Frontend
 

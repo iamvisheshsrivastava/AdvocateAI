@@ -1,16 +1,19 @@
 import json
 import os
+import time
 import requests
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 
 from services.cache_service import cache_service
+from services.mlops_service import get_ai_config, log_ai_event
 
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 LEGAL_DEFAULT_AREA = "General Legal"
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+AI_CONFIG = get_ai_config()
 
 
 def extract_json_object(text: str) -> dict:
@@ -34,19 +37,70 @@ def extract_json_object(text: str) -> dict:
     return {}
 
 
-def call_gemini(prompt: str, timeout_seconds: int = 20) -> str:
+def call_gemini(
+    prompt: str,
+    timeout_seconds: int | None = None,
+    *,
+    telemetry: dict[str, object] | None = None,
+) -> str:
+    telemetry = telemetry or {}
+    started_at = time.perf_counter()
+    resolved_timeout = timeout_seconds or AI_CONFIG.default_timeout_seconds
+    event_name = str(telemetry.get("event_name") or "gemini_call")
+    actor_key = str(telemetry.get("actor_key") or "anonymous")
+    model_name = str(telemetry.get("model_name") or AI_CONFIG.gemini_model)
+    cache_hit = bool(telemetry.get("cache_hit", False))
+
     if not GEMINI_API_KEY:
+        log_ai_event(
+            event_name,
+            started_at=started_at,
+            status="skipped",
+            input_text=prompt,
+            output_text="",
+            actor_key=actor_key,
+            model_name=model_name,
+            cache_hit=cache_hit,
+            metadata={**telemetry, "reason": "missing_gemini_api_key"},
+        )
         return ""
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        f"{model_name}:generateContent?key={GEMINI_API_KEY}"
     )
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    response = requests.post(url, json=payload, timeout=timeout_seconds)
-    response.raise_for_status()
-    result = response.json()
-    return result["candidates"][0]["content"]["parts"][0]["text"]
+    try:
+        response = requests.post(url, json=payload, timeout=resolved_timeout)
+        response.raise_for_status()
+        result = response.json()
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+        log_ai_event(
+            event_name,
+            started_at=started_at,
+            status="success",
+            input_text=prompt,
+            output_text=text,
+            actor_key=actor_key,
+            model_name=model_name,
+            cache_hit=cache_hit,
+            metadata=telemetry,
+        )
+        return text
+    except Exception as exc:
+        log_ai_event(
+            event_name,
+            started_at=started_at,
+            status="error",
+            input_text=prompt,
+            output_text="",
+            actor_key=actor_key,
+            model_name=model_name,
+            cache_hit=cache_hit,
+            metadata=telemetry,
+            error=exc,
+        )
+        raise
 
 
 def _normalize_confidence_level(value: str | None) -> str:
@@ -186,7 +240,18 @@ Document names:
 """
 
     try:
-        parsed = extract_json_object(call_gemini(prompt, timeout_seconds=25))
+        parsed = extract_json_object(
+            call_gemini(
+                prompt,
+                timeout_seconds=AI_CONFIG.brief_timeout_seconds,
+                telemetry={
+                    "event_name": "case_brief_generation",
+                    "actor_key": actor_key,
+                    "legal_area": legal_area,
+                    "document_count": len(document_names or []),
+                },
+            )
+        )
         if not isinstance(parsed, dict):
             return fallback
         brief = _normalize_case_brief(parsed, fallback_text=summary_seed, legal_area=legal_area)
@@ -242,7 +307,15 @@ User message:
 """
 
     try:
-        text_output = call_gemini(prompt)
+        text_output = call_gemini(
+            prompt,
+            timeout_seconds=AI_CONFIG.analysis_timeout_seconds,
+            telemetry={
+                "event_name": "legal_problem_analysis",
+                "actor_key": actor_key,
+                "input_length": len(text),
+            },
+        )
         parsed = extract_json_object(text_output)
         if not isinstance(parsed, dict):
             return _with_case_brief(text, fallback, actor_key)
@@ -283,7 +356,16 @@ Respond naturally and recommend the best options.
 """
 
     try:
-        response = call_gemini(final_prompt, timeout_seconds=25)
+        response = call_gemini(
+            final_prompt,
+            timeout_seconds=AI_CONFIG.chat_timeout_seconds,
+            telemetry={
+                "event_name": "chat_response",
+                "actor_key": actor_key,
+                "context_length": len(context),
+                "message_length": len(user_message),
+            },
+        )
         cache_service.set(cache_key, response, ttl_seconds=900)
         return response
     except Exception:

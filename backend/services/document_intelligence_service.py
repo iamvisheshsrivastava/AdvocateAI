@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import uuid
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,12 +15,14 @@ from db.database import get_db_connection
 from services.ai_service import (
     GEMINI_API_KEY,
     LEGAL_DEFAULT_AREA,
+    AI_CONFIG,
     build_case_brief,
     call_gemini,
     embed_model,
     extract_json_object,
 )
 from services.cache_service import cache_service
+from services.mlops_service import get_ai_config, log_ai_event
 
 load_dotenv()
 
@@ -380,7 +383,16 @@ def _extract_textual_analysis(text: str, file_name: str, page_count: int | None)
         return _fallback_analysis()
 
     prompt = _analysis_prompt_from_text(text)
-    response_text = call_gemini(prompt, timeout_seconds=35)
+    response_text = call_gemini(
+        prompt,
+        timeout_seconds=AI_CONFIG.analysis_timeout_seconds,
+        telemetry={
+            "event_name": "document_text_analysis",
+            "document_name": file_name,
+            "page_count": page_count or 0,
+            "input_length": len(text),
+        },
+    )
     parsed = extract_json_object(response_text)
     if not isinstance(parsed, dict) or not parsed:
         return _fallback_analysis()
@@ -391,10 +403,12 @@ def _extract_image_analysis(file_bytes: bytes, mime_type: str, file_name: str) -
     if not GEMINI_API_KEY:
         return _fallback_analysis()
 
+    started_at = time.perf_counter()
+    ai_config = get_ai_config()
     encoded = base64.b64encode(file_bytes).decode("utf-8")
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        f"{ai_config.gemini_model}:generateContent?key={GEMINI_API_KEY}"
     )
     payload = {
         "contents": [
@@ -407,10 +421,34 @@ def _extract_image_analysis(file_bytes: bytes, mime_type: str, file_name: str) -
         ]
     }
 
-    response = requests.post(url, json=payload, timeout=35)
-    response.raise_for_status()
-    result = response.json()
-    response_text = result["candidates"][0]["content"]["parts"][0]["text"]
+    try:
+        response = requests.post(url, json=payload, timeout=ai_config.document_timeout_seconds)
+        response.raise_for_status()
+        result = response.json()
+        response_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        log_ai_event(
+            "document_image_analysis",
+            started_at=started_at,
+            status="success",
+            input_text=file_name,
+            output_text=response_text,
+            actor_key="document_image",
+            model_name=ai_config.gemini_model,
+            metadata={"mime_type": mime_type, "file_name": file_name},
+        )
+    except Exception as exc:
+        log_ai_event(
+            "document_image_analysis",
+            started_at=started_at,
+            status="error",
+            input_text=file_name,
+            output_text="",
+            actor_key="document_image",
+            model_name=ai_config.gemini_model,
+            metadata={"mime_type": mime_type, "file_name": file_name},
+            error=exc,
+        )
+        raise
 
     parsed = extract_json_object(response_text)
     if not isinstance(parsed, dict) or not parsed:
@@ -731,7 +769,15 @@ def answer_document_question(
     )
 
     prompt = _qa_prompt_template().format(question=question, context=context, metadata=metadata)
-    response_text = call_gemini(prompt, timeout_seconds=30)
+    response_text = call_gemini(
+        prompt,
+        timeout_seconds=AI_CONFIG.document_timeout_seconds,
+        telemetry={
+            "event_name": "document_question_answering",
+            "document_batch_size": len(documents),
+            "question_length": len(question),
+        },
+    )
     parsed = extract_json_object(response_text)
     if not isinstance(parsed, dict) or not parsed:
         fallback = _fallback_qa(question)

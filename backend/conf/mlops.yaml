@@ -1,0 +1,18 @@
+ai:
+  gemini_model: gemini-2.5-flash
+  default_timeout_seconds: 20
+  analysis_timeout_seconds: 35
+  brief_timeout_seconds: 25
+  chat_timeout_seconds: 25
+  document_timeout_seconds: 30
+
+tracking:
+  enabled: true
+  mlflow_enabled: true
+  mlflow_tracking_uri: null
+  mlflow_experiment: AdvocateAI
+  wandb_enabled: false
+  wandb_project: AdvocateAI
+  wandb_entity: null
+  wandb_mode: offline
+  log_prompts: false
