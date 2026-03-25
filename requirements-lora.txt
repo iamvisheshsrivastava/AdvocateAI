@@ -1,0 +1,9 @@
+-r requirements.txt
+accelerate
+bitsandbytes; platform_system != "Windows"
+datasets
+peft
+safetensors
+sentencepiece
+torch
+transformers

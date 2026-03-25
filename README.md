@@ -19,6 +19,7 @@ The current build is focused on making the first steps of legal help easier: und
 - notifications for messages, applications, and recommendations
 - separate client and lawyer experiences
 - optional MLOps instrumentation for AI runs via Hydra-backed config, MLflow, and Weights & Biases
+- optional one-time LoRA/QLoRA fine-tuning script for running adapter training on a GPU server
 
 ## What Clients Can Do
 
@@ -97,6 +98,31 @@ Optional MLOps settings:
 - `WANDB_MODE` such as `offline` or `disabled`
 
 The default backend config lives in `backend/conf/mlops.yaml`. Tracking is local and non-invasive unless you enable the environment flags above.
+
+### Optional LoRA / QLoRA Fine-Tuning
+
+AdvocateAI now includes a standalone adapter-training script for a one-time GPU run. It is separate from the production backend path, so the app will still use its normal inference flow unless you wire the saved adapter into serving.
+
+Install the extra training dependencies on the GPU server:
+
+```bash
+pip install -r requirements-lora.txt
+```
+
+Run the training script from the repository root:
+
+```bash
+python backend/train_lora.py --dataset path/to/training_data.jsonl --output-dir artifacts/lora_adapter --use-qlora
+```
+
+The dataset can be JSON or JSONL and should contain one of these shapes per record:
+
+- `messages` with chat-style `{role, content}` entries
+- `prompt` and `response`
+- `instruction`, optional `input`, and `output`
+- plain `text`
+
+The script saves the adapter under `artifacts/lora_adapter/adapter` and writes a training manifest with the exact settings used. If you want to make the claim that LoRA/QLoRA fine-tuning was done, run this script and keep the saved artifacts or manifest as evidence.
 
 ### Frontend
 
