@@ -82,8 +82,12 @@ def split_dataset(dataset: Dataset, validation_split: float, seed: int) -> tuple
     if validation_split <= 0.0 or len(dataset) < 2:
         return dataset, None
 
-    eval_size = min(validation_split, 0.5)
-    split = dataset.train_test_split(test_size=eval_size, seed=seed, shuffle=True)
+    eval_fraction = min(validation_split, 0.5)
+    eval_rows = max(1, int(len(dataset) * eval_fraction))
+    if eval_rows >= len(dataset):
+        eval_rows = len(dataset) - 1
+
+    split = dataset.train_test_split(test_size=eval_rows, seed=seed, shuffle=True)
     return split["train"], split["test"]
 
 
@@ -116,7 +120,7 @@ def _render_messages_example(messages: list[Any], tokenizer: AutoTokenizer) -> s
 
 def _render_prompt_response_example(example: dict[str, Any]) -> str | None:
     prompt = str(example.get("prompt") or "").strip()
-    response = str(example.get("response") or example.get("output") or "").strip()
+    response = str(example.get("response") or example.get("output") or example.get("answer") or "").strip()
     if prompt and response:
         return f"### Prompt\n{prompt}\n\n### Response\n{response}"
     return None
@@ -124,7 +128,7 @@ def _render_prompt_response_example(example: dict[str, Any]) -> str | None:
 
 def _render_instruction_example(example: dict[str, Any]) -> str | None:
     instruction = str(example.get("instruction") or "").strip()
-    response = str(example.get("response") or example.get("output") or "").strip()
+    response = str(example.get("response") or example.get("output") or example.get("answer") or "").strip()
     input_text = str(example.get("input") or example.get("context") or "").strip()
     text = str(example.get("text") or "").strip()
 
