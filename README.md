@@ -86,6 +86,8 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 Create a `.env` file inside `backend/` with the required database and API key settings.
 
+Once the backend is running, you can verify service and database readiness at `http://localhost:8000/health`. The root `/` route still returns a lightweight OK response.
+
 Optional MLOps settings:
 
 - `MLOPS_ENABLED=true|false`
