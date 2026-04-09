@@ -1,5 +1,7 @@
 from db.database import get_db_connection
 
+from services.realtime_service import publish_notification_event
+
 
 def create_notification(user_id: int, message: str, notification_type: str) -> None:
     conn = get_db_connection()
@@ -8,12 +10,28 @@ def create_notification(user_id: int, message: str, notification_type: str) -> N
         """
         INSERT INTO notifications (user_id, message, type)
         VALUES (%s, %s, %s)
+        RETURNING id, user_id, message, type, is_read, created_at
         """,
         (user_id, message.strip(), notification_type.strip()),
     )
+    row = cur.fetchone()
     conn.commit()
     cur.close()
     conn.close()
+
+    if row:
+        payload = {
+            "event": "notification.created",
+            "notification": {
+                "id": row[0],
+                "user_id": row[1],
+                "message": row[2],
+                "type": row[3],
+                "is_read": row[4],
+                "created_at": str(row[5]),
+            },
+        }
+        publish_notification_event(user_id, payload)
 
 
 def get_notifications(user_id: int):

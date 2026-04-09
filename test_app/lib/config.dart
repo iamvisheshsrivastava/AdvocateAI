@@ -4,4 +4,6 @@ import 'config_base.dart'
 
 class ApiConfig {
   static String get baseUrl => config_impl.getBaseUrl();
+
+  static String get webSocketBaseUrl => config_impl.getWebSocketBaseUrl();
 }

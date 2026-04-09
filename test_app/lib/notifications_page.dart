@@ -3,8 +3,77 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'config.dart';
+
+class NotificationSocketClient {
+  NotificationSocketClient({
+    required this.userId,
+    required this.onNotification,
+  });
+
+  final int userId;
+  final VoidCallback onNotification;
+
+  WebSocketChannel? _channel;
+  StreamSubscription? _subscription;
+  Timer? _reconnectTimer;
+  bool _disposed = false;
+
+  void connect() {
+    if (_disposed || _channel != null) {
+      return;
+    }
+
+    final uri = Uri.parse('${ApiConfig.webSocketBaseUrl}/ws/notifications/$userId');
+    _channel = WebSocketChannel.connect(uri);
+    _subscription = _channel!.stream.listen(
+      (event) {
+        if (_disposed) {
+          return;
+        }
+
+        try {
+          final decoded = event is String ? jsonDecode(event) : event;
+          if (decoded is Map<String, dynamic> && decoded['event'] != 'notification.created') {
+            return;
+          }
+        } catch (_) {
+          return;
+        }
+
+        onNotification();
+      },
+      onError: (_) => _scheduleReconnect(),
+      onDone: _scheduleReconnect,
+      cancelOnError: true,
+    );
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed) {
+      return;
+    }
+
+    _closeChannel();
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 5), connect);
+  }
+
+  void _closeChannel() {
+    _subscription?.cancel();
+    _subscription = null;
+    _channel?.sink.close();
+    _channel = null;
+  }
+
+  void dispose() {
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    _closeChannel();
+  }
+}
 
 class NotificationsPage extends StatefulWidget {
   final int userId;
@@ -18,11 +87,29 @@ class NotificationsPage extends StatefulWidget {
 class _NotificationsPageState extends State<NotificationsPage> {
   bool isLoading = true;
   List<dynamic> notifications = [];
+  late final NotificationSocketClient socketClient;
 
   @override
   void initState() {
     super.initState();
+    socketClient = NotificationSocketClient(
+      userId: widget.userId,
+      onNotification: () {
+        if (!mounted) {
+          return;
+        }
+
+        _loadNotifications(markAsRead: true);
+      },
+    );
     _loadNotifications(markAsRead: true);
+    socketClient.connect();
+  }
+
+  @override
+  void dispose() {
+    socketClient.dispose();
+    super.dispose();
   }
 
   Future<void> _loadNotifications({bool markAsRead = false}) async {
@@ -120,16 +207,27 @@ class NotificationBellAction extends StatefulWidget {
 class _NotificationBellActionState extends State<NotificationBellAction> {
   int unreadCount = 0;
   Timer? timer;
+  late final NotificationSocketClient socketClient;
 
   @override
   void initState() {
     super.initState();
+    socketClient = NotificationSocketClient(
+      userId: widget.userId,
+      onNotification: () {
+        if (mounted) {
+          _loadUnreadCount();
+        }
+      },
+    );
     _loadUnreadCount();
     timer = Timer.periodic(const Duration(seconds: 20), (_) => _loadUnreadCount());
+    socketClient.connect();
   }
 
   @override
   void dispose() {
+    socketClient.dispose();
     timer?.cancel();
     super.dispose();
   }
