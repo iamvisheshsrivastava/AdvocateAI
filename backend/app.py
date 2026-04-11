@@ -12,6 +12,7 @@ from routers.documents import router as documents_router
 from routers.lawyers import router as lawyers_router
 from routers.legal_actions import router as legal_actions_router
 from routers.messages import router as messages_router
+from routers.ml import router as ml_router
 from routers.notifications import router as notifications_router
 from routers.realtime import router as realtime_router
 
@@ -55,6 +56,7 @@ app.include_router(lawyers_router)
 app.include_router(documents_router)
 app.include_router(legal_actions_router)
 app.include_router(messages_router)
+app.include_router(ml_router)
 app.include_router(notifications_router)
 app.include_router(realtime_router)
 

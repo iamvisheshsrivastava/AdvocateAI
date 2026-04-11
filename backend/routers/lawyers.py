@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from db.database import get_db_connection
 from models.lawyer import LawyerProfileRequest, WatchlistRequest
-from services.matching_service import recommend_lawyers_for_case
+from services.ml_matching_service import recommend_lawyers_for_case_ml
 
 router = APIRouter(tags=["lawyers"])
 USER_ROLE_QUERY = "SELECT COALESCE(role, 'client') FROM users WHERE id = %s"
@@ -110,7 +110,8 @@ async def get_lawyer_profile(lawyer_id: int):
 
 @router.get("/lawyers/recommended/{case_id}")
 async def get_recommended_lawyers(case_id: int):
-    return recommend_lawyers_for_case(case_id, limit=5)
+    response = recommend_lawyers_for_case_ml(case_id, limit=5)
+    return response.get("items", [])
 
 
 @router.get("/watchlist/{user_id}")
