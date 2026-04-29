@@ -35,18 +35,15 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 159.89.163.233 >> ~/.ssh/known_hosts
 
-      # 5️⃣ Deploy to Droplet
-      - name: Deploy to Droplet
+      # 5️⃣ Deploy Backend
+      - name: Deploy Backend
         run: |
-          ssh root@159.89.163.233 << EOF
-          
+          ssh root@159.89.163.233 << 'EOF'
             cd /root/AdvocateAI
             git pull origin main
 
-            # ---- BACKEND ----
             cd backend
 
-            # Create .env from GitHub Secrets
             cat <<EOT > .env
             GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
@@ -55,11 +52,9 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt || true
             systemctl restart advocateai || true
-
-            # ---- FRONTEND ----
-            rm -rf /var/www/html/*
-            exit
           EOF
 
-          # Copy built frontend files to server
-          scp -r test_app/build/web/* root@159.89.163.233:/var/www/html/
+      # 6️⃣ Deploy Frontend (FIXED)
+      - name: Deploy Frontend
+        run: |
+          rsync -avz --delete test_app/build/web/ root@159.89.163.233:/var/www/html/
