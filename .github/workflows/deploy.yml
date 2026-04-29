@@ -38,13 +38,20 @@ jobs:
       # 5️⃣ Deploy to Droplet
       - name: Deploy to Droplet
         run: |
-          ssh root@159.89.163.233 << 'EOF'
+          ssh root@159.89.163.233 << EOF
           
             cd /root/AdvocateAI
             git pull origin main
 
             # ---- BACKEND ----
             cd backend
+
+            # Create .env from GitHub Secrets
+            cat <<EOT > .env
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            EOT
+
             source venv/bin/activate
             pip install -r requirements.txt || true
             systemctl restart advocateai || true
