@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "tempuser123",
+    "email": "tempuser123@advocateai.local",
+    "password": "abc12345",
+    "password_hash": "abc12345",
+    "role": "client"
+  },
+  {
+    "id": 2,
+    "name": "testuser348170708",
+    "email": "testuser348170708@advocateai.local",
+    "password": "abc12345",
+    "password_hash": "abc12345",
+    "role": "client"
+  },
+  {
+    "id": 3,
+    "name": "test",
+    "email": "test@advocateai.local",
+    "password": "test",
+    "password_hash": "test",
+    "role": "client"
+  }
+]

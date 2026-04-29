@@ -12,8 +12,27 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 LEGAL_DEFAULT_AREA = "General Legal"
-embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 AI_CONFIG = get_ai_config()
+
+
+class _LazySentenceTransformerModel:
+    def __init__(self, model_name: str):
+        self._model_name = model_name
+        self._model = None
+
+    def _load(self):
+        if self._model is None:
+            self._model = SentenceTransformer(self._model_name)
+        return self._model
+
+    def encode(self, *args, **kwargs):
+        return self._load().encode(*args, **kwargs)
+
+    def __getattr__(self, item):
+        return getattr(self._load(), item)
+
+
+embed_model = _LazySentenceTransformerModel("all-MiniLM-L6-v2")
 
 
 def extract_json_object(text: str) -> dict:

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,7 @@ from routers.realtime import router as realtime_router
 
 app = FastAPI(title="AdvocateAI API", version="2.0")
 app_started_at = datetime.now(timezone.utc)
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +32,10 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    run_startup_migrations()
+    try:
+        run_startup_migrations()
+    except Exception as exc:
+        logger.warning("Startup migrations skipped: %s", exc)
 
 
 def _check_database_connection() -> tuple[bool, str | None]:

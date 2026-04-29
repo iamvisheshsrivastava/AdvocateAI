@@ -37,3 +37,6 @@ test_app/lib/readme_preview_main.dart
 
 # Logs
 *.log
+
+# Local database bundle
+.tools/postgres16/postgres16.zip

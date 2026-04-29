@@ -6,24 +6,41 @@ import 'config.dart';
 Future<Map<String, dynamic>> signupUser(String username, String password, String role) async {
   final url = Uri.parse("${ApiConfig.baseUrl}/signup");
 
-  final response = await http.post(
-    url,
-    headers: {"Content-Type": "application/json"},
-    body: jsonEncode({
-      "username": username,
-      "password": password,
-      "role": role,
-    }),
-  );
+  try {
+    final response = await http
+        .post(
+          url,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "username": username,
+            "password": password,
+            "role": role,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
 
-  if (response.statusCode == 200) {
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+    if (response.statusCode == 200 && decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+
+    if (decoded is Map<String, dynamic>) {
+      return {
+        "success": false,
+        "message": decoded["message"] ?? "Unable to sign up right now.",
+      };
+    }
+
+    return {
+      "success": false,
+      "message": "Unable to sign up right now.",
+    };
+  } catch (error) {
+    return {
+      "success": false,
+      "message": "Signup failed: $error",
+    };
   }
-
-  return {
-    "success": false,
-    "message": "Unable to sign up right now.",
-  };
 }
 
 class SignupPage extends StatefulWidget {
@@ -64,23 +81,27 @@ class _SignupPageState extends State<SignupPage> {
       isSubmitting = true;
     });
 
-    final result = await signupUser(username, password, selectedRole);
+    try {
+      final result = await signupUser(username, password, selectedRole);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      isSubmitting = false;
-    });
-
-    if (result["success"] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Account created. Please login.")),
-      );
-      Navigator.pop(context, username);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result["message"] ?? "Sign up failed")),
-      );
+      if (result["success"] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Account created. Please login.")),
+        );
+        Navigator.pop(context, username);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result["message"] ?? "Sign up failed")),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSubmitting = false;
+        });
+      }
     }
   }
 
