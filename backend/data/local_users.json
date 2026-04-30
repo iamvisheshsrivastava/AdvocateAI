@@ -22,5 +22,13 @@
     "password": "test",
     "password_hash": "test",
     "role": "client"
+  },
+  {
+    "id": 4,
+    "name": "hell",
+    "email": "hell@advocateai.local",
+    "password": "hell",
+    "password_hash": "hell",
+    "role": "client"
   }
 ]

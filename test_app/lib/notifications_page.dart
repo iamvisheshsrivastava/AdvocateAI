@@ -113,28 +113,33 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _loadNotifications({bool markAsRead = false}) async {
-    final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/notifications?user_id=${widget.userId}'),
-    );
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/notifications?user_id=${widget.userId}'),
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final items = data['items'] as List<dynamic>? ?? <dynamic>[];
-      setState(() {
-        notifications = items;
-        isLoading = false;
-      });
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final items = data['items'] as List<dynamic>? ?? <dynamic>[];
+        setState(() {
+          notifications = items;
+          isLoading = false;
+        });
 
-      if (markAsRead && items.any((item) => item['is_read'] == false)) {
-        await http.post(
-          Uri.parse('${ApiConfig.baseUrl}/notifications/read'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'user_id': widget.userId}),
-        );
+        if (markAsRead && items.any((item) => item['is_read'] == false)) {
+          await http.post(
+            Uri.parse('${ApiConfig.baseUrl}/notifications/read'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'user_id': widget.userId}),
+          );
+        }
+      } else {
+        setState(() => isLoading = false);
       }
-    } else {
+    } catch (_) {
+      if (!mounted) return;
       setState(() => isLoading = false);
     }
   }
@@ -233,14 +238,21 @@ class _NotificationBellActionState extends State<NotificationBellAction> {
   }
 
   Future<void> _loadUnreadCount() async {
-    final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/notifications?user_id=${widget.userId}'),
-    );
-    if (!mounted || response.statusCode != 200) return;
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    setState(() {
-      unreadCount = data['unread_count'] as int? ?? 0;
-    });
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/notifications?user_id=${widget.userId}'),
+      );
+      if (!mounted || response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      setState(() {
+        unreadCount = data['unread_count'] as int? ?? 0;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        unreadCount = 0;
+      });
+    }
   }
 
   @override

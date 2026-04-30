@@ -7,8 +7,8 @@ ai:
   document_timeout_seconds: 30
 
 tracking:
-  enabled: true
-  mlflow_enabled: true
+  enabled: false
+  mlflow_enabled: false
   mlflow_tracking_uri: null
   mlflow_experiment: AdvocateAI
   wandb_enabled: false

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'case_intelligence_card.dart';
@@ -154,62 +155,87 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     setState(() {
       messages.add({"role": "user", "text": text});
+      messages.add({"role": "assistant", "text": "Thinking..."});
       isTyping = true;
     });
 
+    final assistantIndex = messages.length - 1;
     scrollToBottom();
     messageController.clear();
 
     final url = Uri.parse("${ApiConfig.baseUrl}/chat");
 
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"message": text, "user_id": userId}),
-    );
-
     String reply = "Error getting response";
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      reply = (data["response"] ?? "Error getting response").toString();
-      latestLegalActionGuide = await _fetchLegalActionGuide(text);
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"message": text, "user_id": userId}),
+          )
+          .timeout(const Duration(seconds: 90));
 
-      final analysis = data["analysis"];
-      if (analysis is Map<String, dynamic>) {
-        final intelligence = data["case_intelligence"];
-        final canPostCase = data["can_post_case"] == true;
-        if (canPostCase) {
-          latestCaseAnalysis = analysis;
-          latestCaseIntelligence = intelligence is Map<String, dynamic> ? intelligence : null;
-          showCaseAnalysis = true;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        reply = (data["response"] ?? "Error getting response").toString();
+        unawaited(_updateLegalActionGuide(text));
+
+        final analysis = data["analysis"];
+        if (analysis is Map<String, dynamic>) {
+          final intelligence = data["case_intelligence"];
+          final canPostCase = data["can_post_case"] == true;
+          if (canPostCase) {
+            latestCaseAnalysis = analysis;
+            latestCaseIntelligence = intelligence is Map<String, dynamic> ? intelligence : null;
+            showCaseAnalysis = true;
+          } else {
+            latestCaseAnalysis = null;
+            latestCaseIntelligence = null;
+            showCaseAnalysis = false;
+          }
         } else {
           latestCaseAnalysis = null;
           latestCaseIntelligence = null;
           showCaseAnalysis = false;
         }
-      } else {
-        latestCaseAnalysis = null;
-        latestCaseIntelligence = null;
-        showCaseAnalysis = false;
-      }
 
-      final suggestedLawyers = data["suggested_lawyers"];
-      if (suggestedLawyers is List) {
-        latestSuggestedLawyers = suggestedLawyers;
+        final suggestedLawyers = data["suggested_lawyers"];
+        if (suggestedLawyers is List) {
+          latestSuggestedLawyers = suggestedLawyers;
+        } else {
+          latestSuggestedLawyers = [];
+        }
       } else {
-        latestSuggestedLawyers = [];
+        unawaited(_updateLegalActionGuide(text));
+        reply = "Could not process your request right now (HTTP ${response.statusCode}).";
       }
-    } else {
-      latestLegalActionGuide = await _fetchLegalActionGuide(text);
+    } on TimeoutException {
+      unawaited(_updateLegalActionGuide(text));
+      reply = "The request timed out. Please try again.";
+    } catch (_) {
+      unawaited(_updateLegalActionGuide(text));
+      reply = "Could not reach the server. Please check the backend and try again.";
+    } finally {
+      setState(() {
+        isTyping = false;
+        if (assistantIndex >= 0 && assistantIndex < messages.length) {
+          messages[assistantIndex] = {"role": "assistant", "text": reply};
+        } else {
+          messages.add({"role": "assistant", "text": reply});
+        }
+      });
     }
 
-    setState(() {
-      isTyping = false;
-      messages.add({"role": "assistant", "text": reply});
-    });
-
     scrollToBottom();
+  }
+
+  Future<void> _updateLegalActionGuide(String problemDescription) async {
+    final guide = await _fetchLegalActionGuide(problemDescription);
+    if (!mounted) return;
+    setState(() {
+      latestLegalActionGuide = guide;
+    });
   }
 
   Future<Map<String, dynamic>?> _fetchLegalActionGuide(String problemDescription) async {

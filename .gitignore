@@ -40,3 +40,26 @@ test_app/lib/readme_preview_main.dart
 
 # Local database bundle
 .tools/postgres16/postgres16.zip
+
+# Machine learning runs / artifacts
+mlruns/
+artifacts/
+
+# Secrets and local env overrides
+.env.local
+.env.*.local
+.env.*
+*.pem
+*.key
+
+# Build / output
+/build/
+test_app/build/
+
+# Database files
+*.sqlite3
+*.db
+
+# Misc
+.python-version
+*.iml

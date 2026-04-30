@@ -1,10 +1,12 @@
+import logging
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 from services.ai_service import analyze_legal_problem, generate_chat_response
-from services.case_intelligence_service import build_case_intelligence
 from services.matching_service import rank_lawyers
 
 router = APIRouter(tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -25,18 +27,21 @@ async def chat(data: ChatRequest):
         }
 
     analysis = analyze_legal_problem(message, actor_key=actor_key)
-    case_intelligence = build_case_intelligence(
-        problem_text=message,
-        analysis=analysis,
-        case_brief=analysis.get("case_brief") if isinstance(analysis, dict) else None,
-        actor_key=actor_key,
-    )
-    lawyers = rank_lawyers(
-        query_text=message,
-        legal_area=analysis.get("legal_area"),
-        city=analysis.get("location"),
-        limit=3,
-    )
+    case_intelligence = None
+    legal_area = analysis.get("legal_area") if isinstance(analysis, dict) else None
+    location = analysis.get("location") if isinstance(analysis, dict) else None
+
+    lawyers = []
+    try:
+        lawyers = rank_lawyers(
+            query_text=message,
+            legal_area=legal_area,
+            city=location,
+            limit=3,
+        )
+    except Exception as exc:
+        # Keep chat available even when the ranking DB path is unavailable.
+        logger.warning("Lawyer ranking unavailable for chat request: %s", exc)
 
     context = ""
     if lawyers:
@@ -54,5 +59,5 @@ async def chat(data: ChatRequest):
         "analysis": analysis,
         "case_intelligence": case_intelligence,
         "suggested_lawyers": lawyers,
-        "can_post_case": bool(analysis.get("is_legal_issue", False)),
+        "can_post_case": bool(analysis.get("is_legal_issue", False)) if isinstance(analysis, dict) else False,
     }
