@@ -4,6 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 from db.database import get_db_connection
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 from models.case import (
     CaseApplicationDecisionRequest,
     CaseApplyRequest,

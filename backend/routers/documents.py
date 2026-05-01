@@ -7,6 +7,9 @@ from services.case_intelligence_service import build_case_intelligence
 from services.document_analysis_service import analyze_document, analyze_documents
 from services.document_intelligence_service import answer_document_question
 from services.matching_service import rank_lawyers
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["documents"])
 
@@ -95,6 +98,7 @@ async def analyze_uploaded_document(
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("Failed to analyze uploaded document")
         raise HTTPException(status_code=500, detail="Failed to analyze document.") from exc
 
 
@@ -119,4 +123,5 @@ async def ask_document_question(request: DocumentQuestionRequest):
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("Failed to answer document question")
         raise HTTPException(status_code=500, detail="Failed to answer document question.") from exc

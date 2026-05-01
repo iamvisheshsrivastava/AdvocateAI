@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 import logging
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from db.database import get_db_connection, run_startup_migrations
 from routers.auth import router as auth_router
@@ -19,7 +21,10 @@ from routers.realtime import router as realtime_router
 
 app = FastAPI(title="AdvocateAI API", version="2.0")
 app_started_at = datetime.now(timezone.utc)
-logger = logging.getLogger(__name__)
+from logging_config import configure_logging, get_logger
+
+configure_logging()
+logger = get_logger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,7 +40,7 @@ async def on_startup():
     try:
         run_startup_migrations()
     except Exception as exc:
-        logger.warning("Startup migrations skipped: %s", exc)
+        logger.exception("Startup migrations skipped: %s", exc)
 
 
 def _check_database_connection() -> tuple[bool, str | None]:
@@ -51,6 +56,7 @@ def _check_database_connection() -> tuple[bool, str | None]:
     except Exception as exc:
         if conn is not None:
             conn.close()
+        logger.exception("Database connection check failed")
         return False, str(exc)
 
 
@@ -64,6 +70,18 @@ app.include_router(messages_router)
 app.include_router(ml_router)
 app.include_router(notifications_router)
 app.include_router(realtime_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    logger.warning("Validation error: %s %s", request.url, exc)
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error handling request %s", request.url)
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 
 @app.get("/")

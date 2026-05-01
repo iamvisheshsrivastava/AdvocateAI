@@ -6,6 +6,9 @@ from typing import Any
 from services.ai_service import GEMINI_API_KEY, LEGAL_DEFAULT_AREA, call_gemini, extract_json_object
 from services.cache_service import cache_service
 from services.mlops_service import get_ai_config
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _as_list(value: Any) -> list[str]:
@@ -280,6 +283,7 @@ def _normalize_ai_case_intelligence(raw: dict[str, Any], fallback: dict[str, Any
     try:
         readiness_score = max(0, min(100, int(score_value)))
     except Exception:
+        logger.exception("Failed to parse readiness_score, using fallback")
         readiness_score = fallback["readiness_score"]
 
     return {
@@ -403,5 +407,6 @@ Document names:
         cache_service.set(cache_key, intelligence, ttl_seconds=1800)
         return intelligence
     except Exception:
+        logger.exception("case_intelligence generation failed, returning fallback")
         cache_service.set(cache_key, fallback, ttl_seconds=1800)
         return fallback

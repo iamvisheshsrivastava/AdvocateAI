@@ -25,6 +25,9 @@ from services.cache_service import cache_service
 from services.mlops_service import get_ai_config, log_ai_event
 
 load_dotenv()
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
 
@@ -166,8 +169,8 @@ def _extract_text_from_pdf(file_bytes: bytes) -> tuple[str, int]:
                 pages_text.append(f"[Page {page_index}]\n{page_text.strip()}")
             combined = "\n\n".join(pages_text)
             return combined[:20000], len(doc)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("fitz PDF extraction failed, falling back to pdfplumber: %s", exc)
 
     pages_text: list[str] = []
     page_count = 0
@@ -357,6 +360,7 @@ def _retrieve_snippets(records: list[dict[str, Any]], question_or_summary: str, 
     try:
         nodes = retriever.retrieve(question_or_summary)
     except Exception:
+        logger.exception("LlamaIndex retrieval failed")
         return []
 
     snippets: list[dict[str, Any]] = []
@@ -532,6 +536,7 @@ def _decode_json_value(value: Any) -> Any:
         try:
             return json.loads(value)
         except Exception:
+            logger.debug("Failed to decode JSON value for document field")
             return value
     return value
 

@@ -18,6 +18,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from db.database import get_db_connection
 from services.matching_service import recommend_lawyers_for_case
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 ARTIFACT_DIR = Path(__file__).resolve().parent.parent / "artifacts"
@@ -350,6 +353,7 @@ def _load_model() -> Pipeline | None:
         if isinstance(loaded, Pipeline):
             return loaded
     except Exception:
+        logger.exception("Failed to load ML matching model")
         return None
     return None
 
@@ -365,6 +369,7 @@ def get_model_status() -> dict[str, Any]:
         try:
             status["manifest"] = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         except Exception:
+            logger.exception("Failed to read model manifest")
             status["manifest"] = None
     return status
 

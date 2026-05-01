@@ -17,3 +17,6 @@ wandb
 pandas
 scikit-learn
 joblib
+pytest
+httpx
+pytest-asyncio

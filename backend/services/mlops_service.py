@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from hydra import compose, initialize_config_dir
@@ -68,6 +71,7 @@ def _as_int(value: Any, default: int) -> int:
         text = str(value).strip()
         return default if not text else int(text)
     except Exception:
+        logger.debug("_as_int failed to parse int, returning default")
         return default
 
 
@@ -84,6 +88,7 @@ def _mapping_get(mapping: Any, key: str, default: Any = None) -> Any:
     try:
         return mapping[key]
     except Exception:
+        logger.debug("_mapping_get fallback to attribute access for key %s", key)
         return getattr(mapping, key, default)
 
 
@@ -96,6 +101,7 @@ def _load_config_from_hydra() -> MLOpsConfig:
         with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
             raw = compose(config_name="mlops")
     except Exception:
+        logger.exception("Hydra config load failed, using defaults")
         return MLOpsConfig()
 
     ai_section = _mapping_get(raw, "ai", {})

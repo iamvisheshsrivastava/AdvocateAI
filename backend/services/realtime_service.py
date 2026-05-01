@@ -4,6 +4,9 @@ import asyncio
 from threading import Lock
 
 from fastapi import WebSocket
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class NotificationHub:
@@ -37,6 +40,7 @@ class NotificationHub:
             try:
                 await websocket.send_json(payload)
             except Exception:
+                logger.exception("WebSocket send failed, marking stale")
                 stale_connections.append(websocket)
 
         if not stale_connections:
@@ -59,6 +63,7 @@ def publish_notification_event(user_id: int, payload: dict) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        logger.debug("No running event loop to publish notification event")
         return
 
     loop.create_task(notification_hub.broadcast(user_id, payload))

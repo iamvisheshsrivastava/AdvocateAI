@@ -4,6 +4,9 @@ import time
 from hashlib import sha256
 from threading import Lock
 from typing import Any
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 try:
     import redis
@@ -29,7 +32,8 @@ class CacheService:
             client = redis.Redis(host=host, port=port, db=0, decode_responses=True)
             client.ping()
             return client
-        except Exception:
+        except Exception as exc:
+            logger.debug("Redis not available at %s:%s: %s", host, port, exc)
             return None
 
     @property
@@ -46,7 +50,7 @@ class CacheService:
                 if value is not None:
                     return json.loads(value)
             except Exception:
-                pass
+                logger.exception("Redis get failed for key %s", key)
 
         with self._lock:
             entry = self._memory_cache.get(key)
@@ -61,6 +65,7 @@ class CacheService:
             try:
                 return json.loads(raw_value)
             except Exception:
+                logger.exception("In-memory cache deserialize failed for key %s", key)
                 return None
 
     def set(self, key: str, value: Any, ttl_seconds: int = 300) -> None:
@@ -71,7 +76,7 @@ class CacheService:
                 self._redis.setex(key, ttl_seconds, serialized)
                 return
             except Exception:
-                pass
+                logger.exception("Redis set failed for key %s", key)
 
         with self._lock:
             self._memory_cache[key] = (time.time() + ttl_seconds, serialized)
@@ -86,7 +91,7 @@ class CacheService:
                     self._redis.expire(key, window_seconds)
                 return int(current) <= limit
             except Exception:
-                pass
+                logger.exception("Redis rate limit check failed for key %s", key)
 
         with self._lock:
             now = time.time()

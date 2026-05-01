@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 
 from services.cache_service import cache_service
 from services.mlops_service import get_ai_config, log_ai_event
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -119,6 +122,7 @@ def call_gemini(
             metadata=telemetry,
             error=exc,
         )
+        logger.exception("call_gemini failed")
         raise
 
 
@@ -276,7 +280,8 @@ Document names:
         brief = _normalize_case_brief(parsed, fallback_text=summary_seed, legal_area=legal_area)
         cache_service.set(cache_key, brief, ttl_seconds=1800)
         return brief
-    except Exception:
+    except Exception as exc:
+        logger.exception("build_case_brief failed, returning fallback")
         return fallback
 
 
@@ -343,7 +348,8 @@ User message:
         result = _with_case_brief(text, result, actor_key)
         cache_service.set(cache_key, result, ttl_seconds=900)
         return result
-    except Exception:
+    except Exception as exc:
+        logger.exception("analyze_legal_problem failed, returning fallback")
         return _with_case_brief(text, fallback, actor_key)
 
 
@@ -387,5 +393,6 @@ Respond naturally and recommend the best options.
         )
         cache_service.set(cache_key, response, ttl_seconds=900)
         return response
-    except Exception:
+    except Exception as exc:
+        logger.exception("generate_chat_response failed")
         return "Sorry, I couldn’t generate a response."

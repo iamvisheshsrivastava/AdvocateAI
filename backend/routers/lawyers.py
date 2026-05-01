@@ -2,6 +2,9 @@ from fastapi import APIRouter
 from db.database import get_db_connection
 from models.lawyer import LawyerProfileRequest, WatchlistRequest
 from services.ml_matching_service import recommend_lawyers_for_case_ml
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["lawyers"])
 USER_ROLE_QUERY = "SELECT COALESCE(role, 'client') FROM users WHERE id = %s"

@@ -4,6 +4,9 @@ from threading import Lock
 
 from fastapi import APIRouter
 from db.database import get_db_connection
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 from models.user import LoginRequest, SignupRequest
 
 router = APIRouter(tags=["auth"])
@@ -27,8 +30,8 @@ def _load_local_users() -> list[dict]:
             data = json.load(handle)
         if isinstance(data, list):
             return [item for item in data if isinstance(item, dict)]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("Failed to load local users file")
 
     return []
 
@@ -130,8 +133,8 @@ async def login(data: LoginRequest):
                 "email": user[2],
                 "role": user[3],
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("Database login lookup failed for %s", username)
     finally:
         if cur is not None:
             cur.close()
@@ -178,12 +181,14 @@ async def signup(data: SignupRequest):
         conn.commit()
         return {"success": True, "user_id": user_id, "username": username, "role": role}
     except Exception as exc:
+        logger.exception("Signup failed using DB, falling back to local users: %s", exc)
         try:
             local_user = _create_local_user(username, password, role)
             return _local_user_payload(local_user)
         except ValueError as local_exc:
             return {"success": False, "message": str(local_exc)}
         except Exception:
+            logger.exception("Failed to create local fallback user")
             return {"success": False, "message": f"Unable to create account: {exc}"}
     finally:
         if cur is not None:

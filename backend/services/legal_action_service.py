@@ -4,6 +4,9 @@ from pathlib import Path
 from services.ai_service import GEMINI_API_KEY, call_gemini, extract_json_object
 from services.cache_service import cache_service
 from services.mlops_service import get_ai_config
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 SUPPORTED_WORKFLOWS = {
     "lost_phone": ["lost phone", "lost mobile", "phone stolen", "mobile stolen", "imei", "stolen phone"],
@@ -78,6 +81,7 @@ User problem:
         cache_service.set(cache_key, issue_type, ttl_seconds=1800)
         return issue_type
     except Exception:
+        logger.exception("Failed to classify legal action, falling back")
         return fallback
 
 

@@ -6,6 +6,9 @@ from db.database import get_db_connection
 from models.message import MessageSendRequest
 from services.matching_service import refresh_lawyer_responsiveness
 from services.notification_service import create_notification
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["messages"])
 

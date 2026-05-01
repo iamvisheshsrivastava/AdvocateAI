@@ -3,6 +3,9 @@ import numpy as np
 from db.database import get_db_connection
 from services.ai_service import embed_model
 from services.cache_service import cache_service
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _normalized_text(value: str | None) -> str:
@@ -159,6 +162,7 @@ def _embedding_score(query_embedding: list[float], embedding_json: str) -> float
         profile_embedding = np.array(json.loads(embedding_json))
         return float(np.dot(query_embedding, profile_embedding))
     except Exception:
+        logger.exception("Failed to compute embedding score")
         return None
 
 
