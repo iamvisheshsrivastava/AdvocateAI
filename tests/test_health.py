@@ -1,14 +1,9 @@
-import os
-
 from fastapi.testclient import TestClient
-
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
-
-from app import app
 
 
 def test_root():
+    from app import app
+
     client = TestClient(app)
     r = client.get('/')
     assert r.status_code == 200
@@ -16,6 +11,8 @@ def test_root():
 
 
 def test_health():
+    from app import app
+
     client = TestClient(app)
     r = client.get('/health')
     # Health may be degraded if DB isn't running; ensure response structure

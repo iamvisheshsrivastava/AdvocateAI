@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from db.database import get_db_connection, run_startup_migrations
+from errors import AppError
+from logging_config import configure_logging, get_logger
 from routers.auth import router as auth_router
 from routers.chat import router as chat_router
 from routers.cases import router as cases_router
@@ -19,12 +21,11 @@ from routers.ml import router as ml_router
 from routers.notifications import router as notifications_router
 from routers.realtime import router as realtime_router
 
-app = FastAPI(title="AdvocateAI API", version="2.0")
-app_started_at = datetime.now(timezone.utc)
-from logging_config import configure_logging, get_logger
-
 configure_logging()
 logger = get_logger(__name__)
+
+app = FastAPI(title="AdvocateAI API", version="2.0")
+app_started_at = datetime.now(timezone.utc)
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,6 +77,15 @@ app.include_router(realtime_router)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.warning("Validation error: %s %s", request.url, exc)
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    logger.warning("Application error on %s: %s", request.url, exc.message)
+    content = {"detail": exc.message}
+    if exc.details is not None:
+        content["details"] = exc.details
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 @app.exception_handler(Exception)
