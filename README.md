@@ -21,6 +21,29 @@ The current build is focused on making the first steps of legal help easier: und
 - optional MLOps instrumentation for AI runs via Hydra-backed config, MLflow, and Weights & Biases
 - optional one-time LoRA/QLoRA fine-tuning script for running adapter training on a GPU server
 
+## Tech Stack
+
+**Backend & APIs:** FastAPI, Python, Uvicorn  
+**RAG & Retrieval:** LangChain, LlamaIndex, semantic chunking, retrieval-augmented generation  
+**Vector Storage:** FAISS (local similarity search), Qdrant (production vector retrieval), PostgreSQL with pgvector (hybrid relational + vector storage)  
+**LLM Frameworks:** HuggingFace Transformers, OpenAI API  
+**Fine-Tuning:** Optional LoRA/QLoRA adapter training via `backend/train_lora.py`  
+**MLOps:** MLflow experiment tracking, Weights & Biases, Hydra config management  
+**Frontend:** Flutter (Dart), Chrome target  
+**Infrastructure:** Docker, Git, Linux  
+
+## Architecture Overview
+
+The AI pipeline follows a RAG (Retrieval-Augmented Generation) flow:
+
+1. User uploads a legal document (PDF or image)
+2. Document is chunked and converted into vector embeddings
+3. Embeddings are stored in a vector store (FAISS locally, Qdrant in production, pgvector for hybrid queries)
+4. On user query, relevant chunks are retrieved via semantic similarity search
+5. Retrieved context is passed to an LLM (OpenAI API or HuggingFace model) with a structured prompt via LangChain/LlamaIndex
+6. LLM returns a structured response: case summary, extracted entities, urgency signals, and next-step guidance
+7. Optional: LoRA/QLoRA fine-tuning adapters can be trained and wired into the serving path for domain-specific legal language
+
 ## What Clients Can Do
 
 - sign up and log in

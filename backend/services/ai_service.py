@@ -2,7 +2,6 @@ import json
 import os
 import time
 import requests
-from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 
 from services.cache_service import cache_service
@@ -25,6 +24,8 @@ class _LazySentenceTransformerModel:
 
     def _load(self):
         if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
             self._model = SentenceTransformer(self._model_name)
         return self._model
 
