@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'client';
-UPDATE users SET password_hash = COALESCE(password_hash, password) WHERE password_hash IS NULL;
 UPDATE users SET role = 'client' WHERE role IS NULL;
 
 -- ==============================

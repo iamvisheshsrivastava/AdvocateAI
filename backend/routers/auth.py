@@ -5,6 +5,7 @@ from threading import Lock
 from fastapi import APIRouter
 from db.database import get_db_connection
 from logging_config import get_logger
+from security import hash_password, is_legacy_password_hash, verify_password
 
 logger = get_logger(__name__)
 from models.user import LoginRequest, SignupRequest
@@ -62,11 +63,16 @@ def _find_local_user_by_name(username: str) -> dict | None:
 
 def _find_local_user_by_login(username: str, password: str) -> dict | None:
     normalized = username.strip().lower()
-    for user in _load_local_users():
+    users = _load_local_users()
+    for user in users:
         if str(user.get("name", "")).strip().lower() != normalized:
             continue
         stored_password = str(user.get("password_hash") or user.get("password") or "")
-        if stored_password == password:
+        if verify_password(password, stored_password):
+            if is_legacy_password_hash(stored_password) or user.get("password"):
+                user["password_hash"] = hash_password(password)
+                user.pop("password", None)
+                _save_local_users(users)
             return user
     return None
 
@@ -90,8 +96,7 @@ def _create_local_user(username: str, password: str, role: str) -> dict:
             "id": next_id,
             "name": username,
             "email": f"{username}@advocateai.local",
-            "password": password,
-            "password_hash": password,
+            "password_hash": hash_password(password),
             "role": role,
         }
         users.append(user)
@@ -114,18 +119,22 @@ async def login(data: LoginRequest):
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT id, name, email, COALESCE(role, 'client')
+            SELECT id, name, email, COALESCE(role, 'client'), password_hash, password
             FROM users
             WHERE (LOWER(name) = LOWER(%s) OR LOWER(email) = LOWER(%s))
-              AND (COALESCE(password_hash, password) = %s OR password = %s)
+            LIMIT 1
             """,
-            (username, username, password, password),
+            (username, username),
         )
         user = cur.fetchone()
-        cur.close()
-        conn.close()
 
-        if user:
+        if user and verify_password(password, user[4] or user[5]):
+            if is_legacy_password_hash(user[4]) or user[5]:
+                cur.execute(
+                    "UPDATE users SET password = NULL, password_hash = %s WHERE id = %s",
+                    (hash_password(password), user[0]),
+                )
+                conn.commit()
             return {
                 "success": True,
                 "user_id": user[0],
@@ -175,7 +184,7 @@ async def signup(data: SignupRequest):
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (username, email, password, password, role),
+            (username, email, None, hash_password(password), role),
         )
         user_id = cur.fetchone()[0]
         conn.commit()

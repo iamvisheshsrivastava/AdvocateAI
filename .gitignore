@@ -20,6 +20,7 @@ venv/
 # Environment files
 .env
 backend/.env
+backend/data/local_users.json
 
 # Flutter / Dart local artifacts
 test_app/.dart_tool/
@@ -38,8 +39,8 @@ test_app/lib/readme_preview_main.dart
 # Logs
 *.log
 
-# Local database bundle
-.tools/postgres16/postgres16.zip
+# Local tooling
+.tools/
 
 # Machine learning runs / artifacts
 mlruns/
@@ -57,6 +58,7 @@ artifacts/
 test_app/build/
 
 # Database files
+*.sqlite
 *.sqlite3
 *.db
 

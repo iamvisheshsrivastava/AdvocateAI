@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+import os
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -27,9 +28,19 @@ logger = get_logger(__name__)
 app = FastAPI(title="AdvocateAI API", version="2.0")
 app_started_at = datetime.now(timezone.utc)
 
+
+def _csv_env(name: str, default: str = "") -> list[str]:
+    raw_value = os.getenv(name, default)
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_csv_env(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost,http://127.0.0.1,http://localhost:8000,http://127.0.0.1:8000",
+    ),
+    allow_origin_regex=os.getenv("CORS_ALLOW_ORIGIN_REGEX", r"http://(localhost|127\.0\.0\.1)(:\d+)?"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -2,6 +2,7 @@ import json
 from datetime import date, datetime, timedelta
 
 from db.database import get_db_connection, run_startup_migrations
+from security import hash_password
 
 
 DEMO_PASSWORD = "demo123"
@@ -22,6 +23,7 @@ def _case_brief(summary: str, legal_area: str, documents: list[str], next_steps:
 
 
 def _ensure_user(cur, name: str, email: str, role: str, user_id: int | None = None) -> int:
+    password_hash = hash_password(DEMO_PASSWORD)
     cur.execute("SELECT id FROM users WHERE LOWER(name) = LOWER(%s)", (name,))
     row = cur.fetchone()
     if row:
@@ -34,7 +36,7 @@ def _ensure_user(cur, name: str, email: str, role: str, user_id: int | None = No
                 role = %s
             WHERE id = %s
             """,
-            (email, DEMO_PASSWORD, DEMO_PASSWORD, role, row[0]),
+            (email, None, password_hash, role, row[0]),
         )
         return int(row[0])
 
@@ -45,7 +47,7 @@ def _ensure_user(cur, name: str, email: str, role: str, user_id: int | None = No
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (name, email, DEMO_PASSWORD, DEMO_PASSWORD, role),
+            (name, email, None, password_hash, role),
         )
         return int(cur.fetchone()[0])
 
@@ -62,7 +64,7 @@ def _ensure_user(cur, name: str, email: str, role: str, user_id: int | None = No
             role = EXCLUDED.role
         RETURNING id
         """,
-        (user_id, name, email, DEMO_PASSWORD, DEMO_PASSWORD, role),
+        (user_id, name, email, None, password_hash, role),
     )
     return int(cur.fetchone()[0])
 

@@ -1,8 +1,8 @@
-import psycopg2
 import requests
 import os
 import time
 from dotenv import load_dotenv
+from db.database import get_db_connection
 
 load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -16,14 +16,7 @@ CITIES = [
     "Bonn", "Münster", "Karlsruhe"
 ]
 
-# Database connection
-conn = psycopg2.connect(
-    host="localhost",
-    database="postgres",
-    user="postgres",
-    password="postgres",
-    port=5432
-)
+conn = get_db_connection()
 
 
 def insert_places(places, city):

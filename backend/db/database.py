@@ -25,7 +25,6 @@ def run_startup_migrations():
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'client'")
-    cur.execute("UPDATE users SET password_hash = COALESCE(password_hash, password) WHERE password_hash IS NULL")
     cur.execute("UPDATE users SET role = 'client' WHERE role IS NULL")
 
     cur.execute(

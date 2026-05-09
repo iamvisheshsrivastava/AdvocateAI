@@ -1,18 +1,11 @@
-import psycopg2
 import json
 from sentence_transformers import SentenceTransformer
+from db.database import get_db_connection
 
 # Load embedding model
 model = SentenceTransformer("all-MiniLM-L6-v2") #384 numbers per embedding
 
-# Connect to DB
-conn = psycopg2.connect(
-    host="localhost",
-    database="postgres",
-    user="postgres",
-    password="postgres",
-    port=5432
-)
+conn = get_db_connection()
 
 cur = conn.cursor()
 

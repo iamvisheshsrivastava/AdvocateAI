@@ -1,0 +1,9 @@
+[
+  {
+    "id": 1,
+    "name": "demo_client",
+    "email": "demo_client@advocateai.local",
+    "password_hash": "replace-with-a-local-only-hash",
+    "role": "client"
+  }
+]

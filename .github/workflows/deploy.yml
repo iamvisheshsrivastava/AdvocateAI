@@ -10,24 +10,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.8'
 
-      # 3️⃣ Build Flutter Web
       - name: Build Flutter Web
         run: |
           cd test_app
           flutter pub get
           flutter build web
 
-      # 4️⃣ Setup SSH
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -35,7 +31,6 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 159.89.163.233 >> ~/.ssh/known_hosts
 
-      # 5️⃣ Deploy Backend
       - name: Deploy Backend
         run: |
           ssh root@159.89.163.233 << 'EOF'
@@ -47,14 +42,14 @@ jobs:
             cat <<EOT > .env
             GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
             EOT
 
             source venv/bin/activate
-            pip install -r requirements.txt || true
-            systemctl restart advocateai || true
+            pip install -r ../requirements.txt
+            systemctl restart advocateai
           EOF
 
-      # 6️⃣ Deploy Frontend (FIXED)
       - name: Deploy Frontend
         run: |
           rsync -avz --delete test_app/build/web/ root@159.89.163.233:/var/www/html/
