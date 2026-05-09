@@ -14,7 +14,8 @@ String getBaseUrl() {
   if (host.contains('localhost') || host.contains('127.0.0.1')) {
     return 'http://localhost:8000';
   }
-  return 'http://$host/api';
+  final scheme = web.window.location.protocol == 'https:' ? 'https' : 'http';
+  return '$scheme://$host/api';
 }
 
 String getWebSocketBaseUrl() {

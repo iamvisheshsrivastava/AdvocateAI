@@ -34,13 +34,18 @@ def _csv_env(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
+def _optional_env(name: str, default: str | None = None) -> str | None:
+    value = os.getenv(name, default)
+    return value.strip() if value and value.strip() else None
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_csv_env(
         "CORS_ALLOWED_ORIGINS",
         "http://localhost,http://127.0.0.1,http://localhost:8000,http://127.0.0.1:8000",
     ),
-    allow_origin_regex=os.getenv("CORS_ALLOW_ORIGIN_REGEX", r"http://(localhost|127\.0\.0\.1)(:\d+)?"),
+    allow_origin_regex=_optional_env("CORS_ALLOW_ORIGIN_REGEX", r"http://(localhost|127\.0\.0\.1)(:\d+)?"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

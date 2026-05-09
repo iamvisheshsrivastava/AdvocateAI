@@ -4,52 +4,111 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          flutter-version: '3.41.8'
+          python-version: "3.11"
+          cache: pip
 
-      - name: Build Flutter Web
+      - name: Install Backend Dependencies
         run: |
-          cd test_app
-          flutter pub get
-          flutter build web
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Backend Tests
+        run: pytest
+
+      - name: Validate Docker Compose Config
+        run: docker compose --env-file .env.example -f docker-compose.prod.yml config
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER || 'root' }}
+      DO_DEPLOY_PATH: ${{ secrets.DO_DEPLOY_PATH || '/root/AdvocateAI' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H 159.89.163.233 >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$DO_HOST" >> ~/.ssh/known_hosts
 
-      - name: Deploy Backend
+      - name: Sync Repository to Droplet
         run: |
-          ssh root@159.89.163.233 << 'EOF'
-            cd /root/AdvocateAI
-            git pull origin main
+          ssh "$DO_USER@$DO_HOST" "mkdir -p '$DO_DEPLOY_PATH'"
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude '.venv' \
+            --exclude 'node_modules' \
+            --exclude 'test_app/build' \
+            --exclude 'mlruns' \
+            --exclude 'artifacts' \
+            ./ "$DO_USER@$DO_HOST:$DO_DEPLOY_PATH/"
 
-            cd backend
+      - name: Deploy Docker Stack
+        run: |
+          ssh "$DO_USER@$DO_HOST" << 'EOF'
+            set -euo pipefail
 
-            cat <<EOT > .env
+            DEPLOY_PATH="${{ secrets.DO_DEPLOY_PATH || '/root/AdvocateAI' }}"
+            cd "$DEPLOY_PATH"
+
+            cat > .env.production <<'EOT'
+            PUBLIC_APP_URL=${{ secrets.PUBLIC_APP_URL }}
+            PUBLIC_API_BASE_URL=${{ secrets.PUBLIC_API_BASE_URL }}
+            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+            CORS_ALLOW_ORIGIN_REGEX=${{ secrets.CORS_ALLOW_ORIGIN_REGEX }}
+            LOG_LEVEL=${{ secrets.LOG_LEVEL || 'INFO' }}
+            DB_HOST=db
+            DB_PORT=5432
+            DB_NAME=${{ secrets.DB_NAME || 'advocateai' }}
+            DB_USER=${{ secrets.DB_USER || 'advocateai' }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_CONNECT_TIMEOUT=5
+            POSTGRES_DB=${{ secrets.DB_NAME || 'advocateai' }}
+            POSTGRES_USER=${{ secrets.DB_USER || 'advocateai' }}
+            POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}
+            REDIS_HOST=redis
+            REDIS_PORT=6379
             GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+            GEMINI_MODEL=${{ secrets.GEMINI_MODEL || 'gemini-2.5-flash' }}
+            GEMINI_DEFAULT_TIMEOUT=${{ secrets.GEMINI_DEFAULT_TIMEOUT || '20' }}
+            GEMINI_ANALYSIS_TIMEOUT=${{ secrets.GEMINI_ANALYSIS_TIMEOUT || '35' }}
+            GEMINI_BRIEF_TIMEOUT=${{ secrets.GEMINI_BRIEF_TIMEOUT || '25' }}
+            GEMINI_CHAT_TIMEOUT=${{ secrets.GEMINI_CHAT_TIMEOUT || '25' }}
+            GEMINI_DOCUMENT_TIMEOUT=${{ secrets.GEMINI_DOCUMENT_TIMEOUT || '30' }}
+            MLOPS_ENABLED=${{ secrets.MLOPS_ENABLED || 'false' }}
+            MLOPS_LOG_PROMPTS=${{ secrets.MLOPS_LOG_PROMPTS || 'false' }}
+            MLFLOW_ENABLED=${{ secrets.MLFLOW_ENABLED || 'false' }}
+            MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
+            MLFLOW_EXPERIMENT_NAME=${{ secrets.MLFLOW_EXPERIMENT_NAME || 'AdvocateAI' }}
+            WANDB_ENABLED=${{ secrets.WANDB_ENABLED || 'false' }}
+            WANDB_PROJECT=${{ secrets.WANDB_PROJECT || 'AdvocateAI' }}
+            WANDB_ENTITY=${{ secrets.WANDB_ENTITY }}
+            WANDB_MODE=${{ secrets.WANDB_MODE || 'offline' }}
             EOT
 
-            source venv/bin/activate
-            pip install -r ../requirements.txt
-            systemctl restart advocateai
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
+            docker compose --env-file .env.production -f docker-compose.prod.yml ps
           EOF
-
-      - name: Deploy Frontend
-        run: |
-          rsync -avz --delete test_app/build/web/ root@159.89.163.233:/var/www/html/

@@ -157,6 +157,72 @@ flutter pub get
 flutter run -d chrome
 ```
 
+## Docker Production Deployment
+
+This repository includes a Docker-based production stack:
+
+- `frontend`: Flutter web served by Nginx, with `/api` proxied to the backend
+- `backend`: FastAPI served by Uvicorn
+- `db`: PostgreSQL 16
+- `redis`: Redis for cache and rate limiting
+
+Create a production env file from the committed example:
+
+```bash
+cp .env.example .env.production
+```
+
+Fill in the real values, especially `DB_PASSWORD`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `PUBLIC_APP_URL`, `PUBLIC_API_BASE_URL`, and `CORS_ALLOWED_ORIGINS`.
+
+Run the stack on the server:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+```
+
+View service status:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+```
+
+The GitHub Actions pipeline in `.github/workflows/deploy.yml` runs backend tests, validates the Docker Compose config, syncs the repository to the DigitalOcean droplet, writes `.env.production` from GitHub Secrets, and starts the Docker stack.
+
+Required GitHub Secrets:
+
+- `DO_HOST`
+- `DO_SSH_KEY`
+- `DB_PASSWORD`
+- `GOOGLE_API_KEY`
+- `GEMINI_API_KEY`
+- `PUBLIC_APP_URL`
+- `PUBLIC_API_BASE_URL`
+- `CORS_ALLOWED_ORIGINS`
+
+Optional GitHub Secrets:
+
+- `DO_USER` defaults to `root`
+- `DO_DEPLOY_PATH` defaults to `/root/AdvocateAI`
+- `DB_NAME` defaults to `advocateai`
+- `DB_USER` defaults to `advocateai`
+- `CORS_ALLOW_ORIGIN_REGEX`
+- `LOG_LEVEL`
+- `GEMINI_MODEL`
+- `GEMINI_DEFAULT_TIMEOUT`
+- `GEMINI_ANALYSIS_TIMEOUT`
+- `GEMINI_BRIEF_TIMEOUT`
+- `GEMINI_CHAT_TIMEOUT`
+- `GEMINI_DOCUMENT_TIMEOUT`
+- `MLOPS_ENABLED`
+- `MLOPS_LOG_PROMPTS`
+- `MLFLOW_ENABLED`
+- `MLFLOW_TRACKING_URI`
+- `MLFLOW_EXPERIMENT_NAME`
+- `WANDB_ENABLED`
+- `WANDB_PROJECT`
+- `WANDB_ENTITY`
+- `WANDB_MODE`
+
 ## Demo Login
 
 ### Client
