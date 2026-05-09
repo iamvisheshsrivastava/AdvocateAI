@@ -67,48 +67,49 @@ jobs:
 
       - name: Deploy Docker Stack
         run: |
-          ssh "$DO_USER@$DO_HOST" << 'EOF'
-            set -euo pipefail
+          ssh "$DO_USER@$DO_HOST" << EOF
+          set -euo pipefail
 
-            DEPLOY_PATH="${{ secrets.DO_DEPLOY_PATH || '/root/AdvocateAI' }}"
-            cd "$DEPLOY_PATH"
+          DEPLOY_PATH="${{ secrets.DO_DEPLOY_PATH || '/root/AdvocateAI' }}"
+          cd "\$DEPLOY_PATH"
 
-            cat > .env.production <<'EOT'
-            PUBLIC_APP_URL=${{ secrets.PUBLIC_APP_URL }}
-            PUBLIC_API_BASE_URL=${{ secrets.PUBLIC_API_BASE_URL }}
-            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
-            CORS_ALLOW_ORIGIN_REGEX=${{ secrets.CORS_ALLOW_ORIGIN_REGEX }}
-            LOG_LEVEL=${{ secrets.LOG_LEVEL || 'INFO' }}
-            DB_HOST=db
-            DB_PORT=5432
-            DB_NAME=${{ secrets.DB_NAME || 'advocateai' }}
-            DB_USER=${{ secrets.DB_USER || 'advocateai' }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_CONNECT_TIMEOUT=5
-            POSTGRES_DB=${{ secrets.DB_NAME || 'advocateai' }}
-            POSTGRES_USER=${{ secrets.DB_USER || 'advocateai' }}
-            POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}
-            REDIS_HOST=redis
-            REDIS_PORT=6379
-            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-            GEMINI_MODEL=${{ secrets.GEMINI_MODEL || 'gemini-2.5-flash' }}
-            GEMINI_DEFAULT_TIMEOUT=${{ secrets.GEMINI_DEFAULT_TIMEOUT || '20' }}
-            GEMINI_ANALYSIS_TIMEOUT=${{ secrets.GEMINI_ANALYSIS_TIMEOUT || '35' }}
-            GEMINI_BRIEF_TIMEOUT=${{ secrets.GEMINI_BRIEF_TIMEOUT || '25' }}
-            GEMINI_CHAT_TIMEOUT=${{ secrets.GEMINI_CHAT_TIMEOUT || '25' }}
-            GEMINI_DOCUMENT_TIMEOUT=${{ secrets.GEMINI_DOCUMENT_TIMEOUT || '30' }}
-            MLOPS_ENABLED=${{ secrets.MLOPS_ENABLED || 'false' }}
-            MLOPS_LOG_PROMPTS=${{ secrets.MLOPS_LOG_PROMPTS || 'false' }}
-            MLFLOW_ENABLED=${{ secrets.MLFLOW_ENABLED || 'false' }}
-            MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
-            MLFLOW_EXPERIMENT_NAME=${{ secrets.MLFLOW_EXPERIMENT_NAME || 'AdvocateAI' }}
-            WANDB_ENABLED=${{ secrets.WANDB_ENABLED || 'false' }}
-            WANDB_PROJECT=${{ secrets.WANDB_PROJECT || 'AdvocateAI' }}
-            WANDB_ENTITY=${{ secrets.WANDB_ENTITY }}
-            WANDB_MODE=${{ secrets.WANDB_MODE || 'offline' }}
-            EOT
+          cat > .env.production << 'EOT'
+          PUBLIC_APP_URL=${{ secrets.PUBLIC_APP_URL }}
+          PUBLIC_API_BASE_URL=${{ secrets.PUBLIC_API_BASE_URL }}
+          CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+          CORS_ALLOW_ORIGIN_REGEX=${{ secrets.CORS_ALLOW_ORIGIN_REGEX }}
+          LOG_LEVEL=${{ secrets.LOG_LEVEL || 'INFO' }}
+          DB_HOST=db
+          DB_PORT=5432
+          DB_NAME=${{ secrets.DB_NAME || 'advocateai' }}
+          DB_USER=${{ secrets.DB_USER || 'advocateai' }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_CONNECT_TIMEOUT=5
+          POSTGRES_DB=${{ secrets.DB_NAME || 'advocateai' }}
+          POSTGRES_USER=${{ secrets.DB_USER || 'advocateai' }}
+          POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL=${{ secrets.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          GEMINI_DEFAULT_TIMEOUT=${{ secrets.GEMINI_DEFAULT_TIMEOUT || '20' }}
+          GEMINI_ANALYSIS_TIMEOUT=${{ secrets.GEMINI_ANALYSIS_TIMEOUT || '35' }}
+          GEMINI_BRIEF_TIMEOUT=${{ secrets.GEMINI_BRIEF_TIMEOUT || '25' }}
+          GEMINI_CHAT_TIMEOUT=${{ secrets.GEMINI_CHAT_TIMEOUT || '25' }}
+          GEMINI_DOCUMENT_TIMEOUT=${{ secrets.GEMINI_DOCUMENT_TIMEOUT || '30' }}
+          MLOPS_ENABLED=${{ secrets.MLOPS_ENABLED || 'false' }}
+          MLOPS_LOG_PROMPTS=${{ secrets.MLOPS_LOG_PROMPTS || 'false' }}
+          MLFLOW_ENABLED=${{ secrets.MLFLOW_ENABLED || 'false' }}
+          MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_EXPERIMENT_NAME=${{ secrets.MLFLOW_EXPERIMENT_NAME || 'AdvocateAI' }}
+          WANDB_ENABLED=${{ secrets.WANDB_ENABLED || 'false' }}
+          WANDB_PROJECT=${{ secrets.WANDB_PROJECT || 'AdvocateAI' }}
+          WANDB_ENTITY=${{ secrets.WANDB_ENTITY }}
+          WANDB_MODE=${{ secrets.WANDB_MODE || 'offline' }}
+          EOT
 
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
-            docker compose --env-file .env.production -f docker-compose.prod.yml ps
+          sed -i 's/^[[:space:]]*//' .env.production
+          docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
+          docker compose --env-file .env.production -f docker-compose.prod.yml ps
           EOF
