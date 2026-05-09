@@ -22,10 +22,41 @@ def run_startup_migrations():
     conn = get_db_connection()
     cur = conn.cursor()
 
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            email TEXT UNIQUE,
+            password TEXT,
+            password_hash TEXT,
+            role TEXT DEFAULT 'client' CHECK (role IN ('client', 'lawyer', 'admin')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'client'")
     cur.execute("UPDATE users SET role = 'client' WHERE role IS NULL")
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS professionals (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            address TEXT NOT NULL,
+            city TEXT,
+            rating FLOAT,
+            review_count INT,
+            category TEXT,
+            embedding TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT unique_professional UNIQUE (name, address)
+        )
+        """
+    )
+    cur.execute("ALTER TABLE professionals ADD COLUMN IF NOT EXISTS embedding TEXT")
 
     cur.execute(
         """
@@ -151,10 +182,26 @@ def run_startup_migrations():
         """
     )
 
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS watchlist (
+            id SERIAL PRIMARY KEY,
+            user_id INT REFERENCES users(id) ON DELETE CASCADE,
+            professional_id INT REFERENCES professionals(id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (user_id, professional_id)
+        )
+        """
+    )
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_case_documents_batch_id ON case_documents(batch_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_case_documents_user_id ON case_documents(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_case_documents_case_id ON case_documents(case_id)")
 
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_professionals_city ON professionals(city)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_professionals_category ON professionals(category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_professional ON watchlist(professional_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cases_legal_area ON cases(legal_area)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cases_city ON cases(city)")
