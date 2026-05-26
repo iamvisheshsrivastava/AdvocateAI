@@ -3,12 +3,14 @@ from pathlib import Path
 from threading import Lock
 
 from fastapi import APIRouter
+
+from auth_utils import create_access_token
 from db.database import get_db_connection
 from logging_config import get_logger
+from models.user import LoginRequest, SignupRequest
 from security import hash_password, is_legacy_password_hash, verify_password
 
 logger = get_logger(__name__)
-from models.user import LoginRequest, SignupRequest
 
 router = APIRouter(tags=["auth"])
 _LOCAL_USERS_FILE = Path(__file__).resolve().parent.parent / "data" / "local_users.json"
@@ -17,48 +19,25 @@ _LOCAL_USERS_LOCK = Lock()
 
 def _normalize_role(role: str | None) -> str:
     normalized = (role or "client").strip().lower()
-    if normalized in ("client", "lawyer", "admin"):
-        return normalized
-    return "client"
+    return normalized if normalized in ("client", "lawyer", "admin") else "client"
 
 
 def _load_local_users() -> list[dict]:
     if not _LOCAL_USERS_FILE.exists():
         return []
-
     try:
-        with _LOCAL_USERS_FILE.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-    except Exception as exc:
+        with _LOCAL_USERS_FILE.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+    except Exception:
         logger.exception("Failed to load local users file")
-
-    return []
+        return []
 
 
 def _save_local_users(users: list[dict]) -> None:
     _LOCAL_USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with _LOCAL_USERS_FILE.open("w", encoding="utf-8") as handle:
-        json.dump(users, handle, ensure_ascii=True, indent=2)
-
-
-def _local_user_payload(user: dict) -> dict:
-    return {
-        "success": True,
-        "user_id": int(user["id"]),
-        "username": user["name"],
-        "email": user["email"],
-        "role": user.get("role", "client"),
-    }
-
-
-def _find_local_user_by_name(username: str) -> dict | None:
-    normalized = username.strip().lower()
-    for user in _load_local_users():
-        if str(user.get("name", "")).strip().lower() == normalized:
-            return user
-    return None
+    with _LOCAL_USERS_FILE.open("w", encoding="utf-8") as fh:
+        json.dump(users, fh, ensure_ascii=True, indent=2)
 
 
 def _find_local_user_by_login(username: str, password: str) -> dict | None:
@@ -67,9 +46,9 @@ def _find_local_user_by_login(username: str, password: str) -> dict | None:
     for user in users:
         if str(user.get("name", "")).strip().lower() != normalized:
             continue
-        stored_password = str(user.get("password_hash") or user.get("password") or "")
-        if verify_password(password, stored_password):
-            if is_legacy_password_hash(stored_password) or user.get("password"):
+        stored = str(user.get("password_hash") or user.get("password") or "")
+        if verify_password(password, stored):
+            if is_legacy_password_hash(stored) or user.get("password"):
                 user["password_hash"] = hash_password(password)
                 user.pop("password", None)
                 _save_local_users(users)
@@ -80,18 +59,9 @@ def _find_local_user_by_login(username: str, password: str) -> dict | None:
 def _create_local_user(username: str, password: str, role: str) -> dict:
     with _LOCAL_USERS_LOCK:
         users = _load_local_users()
-        existing = next(
-            (
-                user
-                for user in users
-                if str(user.get("name", "")).strip().lower() == username.strip().lower()
-            ),
-            None,
-        )
-        if existing is not None:
+        if any(str(u.get("name", "")).strip().lower() == username.strip().lower() for u in users):
             raise ValueError("Username already exists.")
-
-        next_id = max([int(user.get("id", 0)) for user in users], default=0) + 1
+        next_id = max((int(u.get("id", 0)) for u in users), default=0) + 1
         user = {
             "id": next_id,
             "name": username,
@@ -104,16 +74,28 @@ def _create_local_user(username: str, password: str, role: str) -> dict:
         return user
 
 
+def _token_response(user_id: int, username: str, email: str, role: str) -> dict:
+    token = create_access_token(user_id=user_id, role=role, email=email)
+    return {
+        "success": True,
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user_id,
+        "username": username,
+        "email": email,
+        "role": role,
+    }
+
+
 @router.post("/login")
 async def login(data: LoginRequest):
     username = data.username.strip()
     password = data.password.strip()
 
     if not username or not password:
-        return {"success": False}
+        return {"success": False, "message": "Username and password are required."}
 
-    conn = None
-    cur = None
+    conn = cur = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -126,35 +108,28 @@ async def login(data: LoginRequest):
             """,
             (username, username),
         )
-        user = cur.fetchone()
-
-        if user and verify_password(password, user[4] or user[5]):
-            if is_legacy_password_hash(user[4]) or user[5]:
+        row = cur.fetchone()
+        if row and verify_password(password, row[4] or row[5]):
+            if is_legacy_password_hash(row[4]) or row[5]:
                 cur.execute(
                     "UPDATE users SET password = NULL, password_hash = %s WHERE id = %s",
-                    (hash_password(password), user[0]),
+                    (hash_password(password), row[0]),
                 )
                 conn.commit()
-            return {
-                "success": True,
-                "user_id": user[0],
-                "username": user[1],
-                "email": user[2],
-                "role": user[3],
-            }
-    except Exception as exc:
-        logger.exception("Database login lookup failed for %s", username)
+            return _token_response(row[0], row[1], row[2], row[3])
+    except Exception:
+        logger.exception("DB login failed for %s, trying local fallback", username)
     finally:
-        if cur is not None:
+        if cur:
             cur.close()
-        if conn is not None:
+        if conn:
             conn.close()
 
-    local_user = _find_local_user_by_login(username, password)
-    if local_user is not None:
-        return _local_user_payload(local_user)
+    user = _find_local_user_by_login(username, password)
+    if user:
+        return _token_response(int(user["id"]), user["name"], user["email"], user.get("role", "client"))
 
-    return {"success": False}
+    return {"success": False, "message": "Invalid username or password."}
 
 
 @router.post("/signup")
@@ -166,41 +141,33 @@ async def signup(data: SignupRequest):
     if not username or not password:
         return {"success": False, "message": "Username and password are required."}
 
-    conn = None
-    cur = None
+    conn = cur = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT id FROM users WHERE LOWER(name) = LOWER(%s)", (username,))
-        existing = cur.fetchone()
-
-        if existing:
+        if cur.fetchone():
             return {"success": False, "message": "Username already exists."}
-
         email = f"{username}@advocateai.local"
         cur.execute(
-            """
-            INSERT INTO users (name, email, password, password_hash, role)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-            """,
+            "INSERT INTO users (name, email, password, password_hash, role) VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (username, email, None, hash_password(password), role),
         )
         user_id = cur.fetchone()[0]
         conn.commit()
-        return {"success": True, "user_id": user_id, "username": username, "role": role}
+        return _token_response(user_id, username, email, role)
     except Exception as exc:
-        logger.exception("Signup failed using DB, falling back to local users: %s", exc)
+        logger.exception("DB signup failed, falling back to local users")
         try:
-            local_user = _create_local_user(username, password, role)
-            return _local_user_payload(local_user)
+            user = _create_local_user(username, password, role)
+            return _token_response(int(user["id"]), user["name"], user["email"], user.get("role", "client"))
         except ValueError as local_exc:
             return {"success": False, "message": str(local_exc)}
         except Exception:
-            logger.exception("Failed to create local fallback user")
+            logger.exception("Local user creation also failed")
             return {"success": False, "message": f"Unable to create account: {exc}"}
     finally:
-        if cur is not None:
+        if cur:
             cur.close()
-        if conn is not None:
+        if conn:
             conn.close()

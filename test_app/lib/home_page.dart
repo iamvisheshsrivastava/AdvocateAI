@@ -106,32 +106,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _validateSessionAndLoadUser() async {
-    final sessionExpired = await _isSessionExpired();
-    if (sessionExpired) {
+    final hasSession = await _hasValidSession();
+    if (!hasSession) {
       await logout();
       return;
     }
-
     await loadUser();
   }
 
   Future<void> _enforceSessionTimeout() async {
-    final sessionExpired = await _isSessionExpired();
-    if (sessionExpired) {
-      await logout();
-    }
+    final hasSession = await _hasValidSession();
+    if (!hasSession) await logout();
   }
 
-  Future<bool> _isSessionExpired() async {
+  Future<bool> _hasValidSession() async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt("user_id");
-    final expiresAt = prefs.getInt("session_expires_at");
-
-    if (userId == null || expiresAt == null) {
-      return true;
-    }
-
-    return DateTime.now().millisecondsSinceEpoch >= expiresAt;
+    final token = prefs.getString("access_token") ?? "";
+    final id = prefs.getInt("user_id");
+    return token.isNotEmpty && id != null;
   }
 
   Future<void> logout() async {

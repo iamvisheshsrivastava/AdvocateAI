@@ -11,12 +11,9 @@ redis
 langchain
 llama-index-core
 pymupdf
-hydra-core
-mlflow
-wandb
-pandas
 scikit-learn
 joblib
+python-jose[cryptography]
 pytest
 httpx
 pytest-asyncio
