@@ -304,6 +304,46 @@ async def get_my_cases(client_id: Annotated[int, Query()]):
     return [_case_row_to_dict(row) for row in rows]
 
 
+@router.get("/cases/client/{client_id}")
+async def get_cases_by_client(client_id: int):
+    return await get_my_cases(client_id=client_id)
+
+
+@router.get("/cases/open")
+async def get_open_cases():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.case_id, c.client_id, c.title, c.description, c.legal_area, c.issue_type,
+               c.ai_summary, c.urgency, c.city, c.created_at, c.status
+        FROM cases c
+        WHERE c.status = 'open' AND c.is_public = TRUE
+        ORDER BY c.created_at DESC
+        """
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "case_id": r[0],
+            "client_id": r[1],
+            "title": r[2],
+            "description": r[3],
+            "legal_area": r[4],
+            "issue_type": r[5],
+            "ai_summary": r[6],
+            "urgency": r[7],
+            "city": r[8],
+            "created_at": str(r[9]),
+            "status": r[10],
+        }
+        for r in rows
+    ]
+
+
 @router.get("/cases/{case_id}")
 async def get_case_detail(case_id: int):
     row = _fetch_case_row(case_id)
@@ -349,46 +389,6 @@ async def get_case_insights(case_id: int):
     ]
 
     return _build_case_intelligence_from_row(row, timeline_events=timeline_events)
-
-
-@router.get("/cases/client/{client_id}")
-async def get_cases_by_client(client_id: int):
-    return await get_my_cases(client_id=client_id)
-
-
-@router.get("/cases/open")
-async def get_open_cases():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT c.case_id, c.client_id, c.title, c.description, c.legal_area, c.issue_type,
-               c.ai_summary, c.urgency, c.city, c.created_at, c.status
-        FROM cases c
-        WHERE c.status = 'open' AND c.is_public = TRUE
-        ORDER BY c.created_at DESC
-        """
-    )
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return [
-        {
-            "case_id": r[0],
-            "client_id": r[1],
-            "title": r[2],
-            "description": r[3],
-            "legal_area": r[4],
-            "issue_type": r[5],
-            "ai_summary": r[6],
-            "urgency": r[7],
-            "city": r[8],
-            "created_at": str(r[9]),
-            "status": r[10],
-        }
-        for r in rows
-    ]
 
 
 @router.get("/cases/recommended/{lawyer_id}")
@@ -746,9 +746,12 @@ async def get_case_applications(case_id: int):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT ca.id, ca.case_id, ca.lawyer_id, u.name, ca.message, ca.created_at, ca.status
+        SELECT ca.id, ca.case_id, ca.lawyer_id,
+               COALESCE(lp.name, u.name, 'Unknown Lawyer') AS lawyer_name,
+               ca.message, ca.created_at, ca.status
         FROM case_applications ca
         JOIN users u ON u.id = ca.lawyer_id
+        LEFT JOIN lawyer_profiles lp ON lp.lawyer_id = ca.lawyer_id
         WHERE ca.case_id = %s
         ORDER BY ca.created_at DESC
         """,

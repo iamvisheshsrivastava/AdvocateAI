@@ -44,12 +44,14 @@ def _save_local_users(users: list[dict]) -> None:
 
 
 def _local_user_payload(user: dict) -> dict:
+    import secrets as _secrets
     return {
         "success": True,
         "user_id": int(user["id"]),
         "username": user["name"],
         "email": user["email"],
         "role": user.get("role", "client"),
+        "access_token": _secrets.token_urlsafe(32),
     }
 
 
@@ -135,12 +137,14 @@ async def login(data: LoginRequest):
                     (hash_password(password), user[0]),
                 )
                 conn.commit()
+            import secrets as _secrets
             return {
                 "success": True,
                 "user_id": user[0],
                 "username": user[1],
                 "email": user[2],
                 "role": user[3],
+                "access_token": _secrets.token_urlsafe(32),
             }
     except Exception as exc:
         logger.exception("Database login lookup failed for %s", username)
@@ -188,7 +192,16 @@ async def signup(data: SignupRequest):
         )
         user_id = cur.fetchone()[0]
         conn.commit()
-        return {"success": True, "user_id": user_id, "username": username, "role": role}
+        import secrets as _secrets
+        email = f"{username}@advocateai.local"
+        return {
+            "success": True,
+            "user_id": user_id,
+            "username": username,
+            "email": email,
+            "role": role,
+            "access_token": _secrets.token_urlsafe(32),
+        }
     except Exception as exc:
         logger.exception("Signup failed using DB, falling back to local users: %s", exc)
         try:

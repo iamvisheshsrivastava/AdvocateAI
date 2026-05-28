@@ -1,3 +1,6 @@
+# Claude Code worktrees and session data (never commit)
+.claude/
+
 # OS / Editor
 .DS_Store
 Thumbs.db
