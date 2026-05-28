@@ -22,7 +22,7 @@ from services.ai_service import (
     extract_json_object,
 )
 from services.cache_service import cache_service
-from services.mlops_service import get_ai_config, log_ai_event
+from services.config_service import get_ai_config, log_ai_event
 
 load_dotenv()
 from logging_config import get_logger

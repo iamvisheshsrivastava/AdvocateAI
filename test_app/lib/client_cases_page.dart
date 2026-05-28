@@ -369,7 +369,36 @@ class _MyCasesPageState extends State<MyCasesPage> {
       appBar: AppBar(title: const Text('My Cases')),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
+          : cases.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.folder_open_outlined, size: 72, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No cases yet',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Create a case from the home screen to get started.',
+                        style: TextStyle(color: Colors.grey.shade500),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const CreateCasePage()),
+                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create a Case'),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: cases.length,
               itemBuilder: (context, index) {
@@ -470,11 +499,31 @@ class _RecommendedLawyersPageState extends State<RecommendedLawyersPage> {
       appBar: AppBar(title: const Text('Recommended Lawyers')),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : GridView.builder(
+          : lawyers.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.person_search_outlined, size: 72, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No lawyers found',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Try describing your legal issue in the chat to get personalised recommendations.',
+                        style: TextStyle(color: Colors.grey.shade500),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              : GridView.builder(
               padding: const EdgeInsets.all(16),
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: 380,
-                mainAxisExtent: 210,
+                mainAxisExtent: 230,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),

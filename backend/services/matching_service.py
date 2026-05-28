@@ -261,9 +261,14 @@ def rank_lawyers(
     if cached:
         return cached[:limit]
 
+    # Fetch DB rows first — skip the expensive embedding model load if nothing to rank
+    lawyer_rows = _fetch_rankable_lawyers()
+    if not lawyer_rows:
+        return []
+
     query_embedding = embed_model.encode(query_text).tolist()
     ranked = []
-    for row in _fetch_rankable_lawyers():
+    for row in lawyer_rows:
         scored = _scored_lawyer(row, query_embedding, legal_area, city, language)
         if scored is not None:
             ranked.append(scored)

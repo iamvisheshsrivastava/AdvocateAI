@@ -3,7 +3,7 @@ from pathlib import Path
 
 from services.ai_service import GEMINI_API_KEY, call_gemini, extract_json_object
 from services.cache_service import cache_service
-from services.mlops_service import get_ai_config
+from services.config_service import get_ai_config
 from logging_config import get_logger
 
 logger = get_logger(__name__)

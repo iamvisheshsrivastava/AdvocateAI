@@ -344,6 +344,88 @@ async def get_open_cases():
     ]
 
 
+@router.get("/cases/recommended/{lawyer_id}")
+async def get_recommended_cases_for_lawyer(lawyer_id: int):
+    if not _is_role(lawyer_id, "lawyer"):
+        return []
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT city, practice_areas, languages
+        FROM lawyer_profiles
+        WHERE lawyer_id = %s
+        """,
+        (lawyer_id,),
+    )
+    profile = cur.fetchone()
+
+    cur.execute(
+        """
+        SELECT case_id, client_id, title, description, legal_area, issue_type, ai_summary, urgency,
+               city, created_at, status
+        FROM cases
+        WHERE status = 'open' AND is_public = TRUE
+        ORDER BY created_at DESC
+        """
+    )
+    cases = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not profile:
+        return [_fallback_recommended_case(row) for row in cases[:10]]
+
+    lawyer_city = (profile[0] or "").strip().lower()
+    practice_areas = [p.strip().lower() for p in (profile[1] or "").split(",") if p.strip()]
+    languages = (profile[2] or "").strip().lower()
+
+    scored = [
+        _score_recommended_case(row, lawyer_id, lawyer_city, practice_areas, languages)
+        for row in cases
+    ]
+
+    scored.sort(key=lambda item: (item["match_score"], item["created_at"]), reverse=True)
+    return scored
+
+
+@router.get("/cases/applications/{lawyer_id}")
+async def get_lawyer_applications(lawyer_id: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT ca.id, ca.case_id, ca.lawyer_id, ca.message, ca.created_at, ca.status,
+               c.title, c.legal_area, c.city, c.status
+        FROM case_applications ca
+        JOIN cases c ON ca.case_id = c.case_id
+        WHERE ca.lawyer_id = %s
+        ORDER BY ca.created_at DESC
+        """,
+        (lawyer_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "case_id": r[1],
+            "lawyer_id": r[2],
+            "message": r[3],
+            "created_at": str(r[4]),
+            "application_status": r[5],
+            "title": r[6],
+            "legal_area": r[7],
+            "city": r[8],
+            "status": r[9],
+        }
+        for r in rows
+    ]
+
+
 @router.get("/cases/{case_id}")
 async def get_case_detail(case_id: int):
     row = _fetch_case_row(case_id)
@@ -389,52 +471,6 @@ async def get_case_insights(case_id: int):
     ]
 
     return _build_case_intelligence_from_row(row, timeline_events=timeline_events)
-
-
-@router.get("/cases/recommended/{lawyer_id}")
-async def get_recommended_cases_for_lawyer(lawyer_id: int):
-    if not _is_role(lawyer_id, "lawyer"):
-        return []
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT city, practice_areas, languages
-        FROM lawyer_profiles
-        WHERE lawyer_id = %s
-        """,
-        (lawyer_id,),
-    )
-    profile = cur.fetchone()
-
-    cur.execute(
-        """
-        SELECT case_id, client_id, title, description, legal_area, issue_type, ai_summary, urgency,
-               city, created_at, status
-        FROM cases
-        WHERE status = 'open' AND is_public = TRUE
-        ORDER BY created_at DESC
-        """
-    )
-    cases = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    if not profile:
-        return [_fallback_recommended_case(row) for row in cases[:10]]
-
-    lawyer_city = (profile[0] or "").strip().lower()
-    practice_areas = [p.strip().lower() for p in (profile[1] or "").split(",") if p.strip()]
-    languages = (profile[2] or "").strip().lower()
-
-    scored = [
-        _score_recommended_case(row, lawyer_id, lawyer_city, practice_areas, languages)
-        for row in cases
-    ]
-
-    scored.sort(key=lambda item: (item["match_score"], item["created_at"]), reverse=True)
-    return scored
 
 
 @router.post("/cases/apply")
@@ -702,42 +738,6 @@ async def close_case(case_id: int, data: CaseCloseRequest):
     )
 
     return {"success": True, "case_id": case_id, "status": "closed"}
-
-
-@router.get("/cases/applications/{lawyer_id}")
-async def get_lawyer_applications(lawyer_id: int):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT ca.id, ca.case_id, ca.lawyer_id, ca.message, ca.created_at, ca.status,
-               c.title, c.legal_area, c.city, c.status
-        FROM case_applications ca
-        JOIN cases c ON ca.case_id = c.case_id
-        WHERE ca.lawyer_id = %s
-        ORDER BY ca.created_at DESC
-        """,
-        (lawyer_id,),
-    )
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return [
-        {
-            "id": r[0],
-            "case_id": r[1],
-            "lawyer_id": r[2],
-            "message": r[3],
-            "created_at": str(r[4]),
-            "application_status": r[5],
-            "title": r[6],
-            "legal_area": r[7],
-            "city": r[8],
-            "status": r[9],
-        }
-        for r in rows
-    ]
 
 
 @router.get("/cases/{case_id}/applications")
