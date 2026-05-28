@@ -304,53 +304,6 @@ async def get_my_cases(client_id: Annotated[int, Query()]):
     return [_case_row_to_dict(row) for row in rows]
 
 
-@router.get("/cases/{case_id}")
-async def get_case_detail(case_id: int):
-    row = _fetch_case_row(case_id)
-
-    if not row:
-        return {}
-
-    payload = _case_row_to_dict(row)
-    payload["accepted_lawyer_id"] = _get_accepted_lawyer_id(case_id)
-    payload["case_intelligence"] = _build_case_intelligence_from_row(row)
-    return payload
-
-
-@router.get("/cases/{case_id}/insights")
-async def get_case_insights(case_id: int):
-    row = _fetch_case_row(case_id)
-    if not row:
-        return {}
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT id, description, event_date, created_at
-        FROM case_events
-        WHERE case_id = %s
-        ORDER BY event_date ASC, created_at ASC
-        """,
-        (case_id,),
-    )
-    events = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    timeline_events = [
-        {
-            "id": event[0],
-            "description": event[1],
-            "event_date": str(event[2]),
-            "created_at": str(event[3]),
-        }
-        for event in events
-    ]
-
-    return _build_case_intelligence_from_row(row, timeline_events=timeline_events)
-
-
 @router.get("/cases/client/{client_id}")
 async def get_cases_by_client(client_id: int):
     return await get_my_cases(client_id=client_id)
@@ -435,6 +388,89 @@ async def get_recommended_cases_for_lawyer(lawyer_id: int):
 
     scored.sort(key=lambda item: (item["match_score"], item["created_at"]), reverse=True)
     return scored
+
+
+@router.get("/cases/applications/{lawyer_id}")
+async def get_lawyer_applications(lawyer_id: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT ca.id, ca.case_id, ca.lawyer_id, ca.message, ca.created_at, ca.status,
+               c.title, c.legal_area, c.city, c.status
+        FROM case_applications ca
+        JOIN cases c ON ca.case_id = c.case_id
+        WHERE ca.lawyer_id = %s
+        ORDER BY ca.created_at DESC
+        """,
+        (lawyer_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "case_id": r[1],
+            "lawyer_id": r[2],
+            "message": r[3],
+            "created_at": str(r[4]),
+            "application_status": r[5],
+            "title": r[6],
+            "legal_area": r[7],
+            "city": r[8],
+            "status": r[9],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/cases/{case_id}")
+async def get_case_detail(case_id: int):
+    row = _fetch_case_row(case_id)
+
+    if not row:
+        return {}
+
+    payload = _case_row_to_dict(row)
+    payload["accepted_lawyer_id"] = _get_accepted_lawyer_id(case_id)
+    payload["case_intelligence"] = _build_case_intelligence_from_row(row)
+    return payload
+
+
+@router.get("/cases/{case_id}/insights")
+async def get_case_insights(case_id: int):
+    row = _fetch_case_row(case_id)
+    if not row:
+        return {}
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, description, event_date, created_at
+        FROM case_events
+        WHERE case_id = %s
+        ORDER BY event_date ASC, created_at ASC
+        """,
+        (case_id,),
+    )
+    events = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    timeline_events = [
+        {
+            "id": event[0],
+            "description": event[1],
+            "event_date": str(event[2]),
+            "created_at": str(event[3]),
+        }
+        for event in events
+    ]
+
+    return _build_case_intelligence_from_row(row, timeline_events=timeline_events)
 
 
 @router.post("/cases/apply")
@@ -702,42 +738,6 @@ async def close_case(case_id: int, data: CaseCloseRequest):
     )
 
     return {"success": True, "case_id": case_id, "status": "closed"}
-
-
-@router.get("/cases/applications/{lawyer_id}")
-async def get_lawyer_applications(lawyer_id: int):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT ca.id, ca.case_id, ca.lawyer_id, ca.message, ca.created_at, ca.status,
-               c.title, c.legal_area, c.city, c.status
-        FROM case_applications ca
-        JOIN cases c ON ca.case_id = c.case_id
-        WHERE ca.lawyer_id = %s
-        ORDER BY ca.created_at DESC
-        """,
-        (lawyer_id,),
-    )
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return [
-        {
-            "id": r[0],
-            "case_id": r[1],
-            "lawyer_id": r[2],
-            "message": r[3],
-            "created_at": str(r[4]),
-            "application_status": r[5],
-            "title": r[6],
-            "legal_area": r[7],
-            "city": r[8],
-            "status": r[9],
-        }
-        for r in rows
-    ]
 
 
 @router.get("/cases/{case_id}/applications")
