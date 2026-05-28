@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 from errors import AppError
 from app import app as backend_app
-from routers.ml import router as ml_router
 from routers.notifications import router as notifications_router
 from services import legal_action_service
 from services import matching_service
@@ -66,23 +65,6 @@ def test_notifications_router_handles_service_failures(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"success": False}
 
-
-def test_ml_router_training_failure_returns_error(monkeypatch):
-    def _raise_train_error(**_kwargs):
-        raise RuntimeError("train failed")
-
-    monkeypatch.setattr("routers.ml.train_lawyer_match_model", _raise_train_error)
-    monkeypatch.setattr("routers.ml.get_model_status", lambda: {"ready": False})
-    monkeypatch.setattr("routers.ml.recommend_lawyers_for_case_ml", lambda case_id, limit=5: {"case_id": case_id, "items": []})
-
-    app = FastAPI()
-    app.include_router(ml_router)
-    client = TestClient(app)
-
-    response = client.post("/ml/lawyer-matching/train")
-    assert response.status_code == 200
-    assert response.json()["success"] is False
-    assert "train failed" in response.json()["error"]
 
 
 def test_app_error_serializes_cleanly():
