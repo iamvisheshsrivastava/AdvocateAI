@@ -13,6 +13,7 @@ llama-index-core
 pymupdf
 scikit-learn
 joblib
+pandas
 python-jose[cryptography]
 pytest
 httpx
