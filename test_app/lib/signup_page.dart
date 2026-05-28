@@ -270,10 +270,13 @@ class _SignupPageState extends State<SignupPage>
               opacity: _fade,
               child: SlideTransition(
                 position: _slide,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: form,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(vertical: 48),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: form,
+                    ),
                   ),
                 ),
               ),
