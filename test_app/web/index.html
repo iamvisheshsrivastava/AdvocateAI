@@ -42,5 +42,45 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <!-- Speech recognition helper -->
+  <script>
+    var _activeRecognition = null;
+
+    window.advocateSpeechAvailable = function() {
+      return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    };
+
+    window.advocateStartSpeech = function(onResult, onEnd) {
+      if (_activeRecognition) {
+        try { _activeRecognition.abort(); } catch(e) {}
+        _activeRecognition = null;
+      }
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { onEnd('not_available'); return; }
+      var r = new SR();
+      r.continuous = false;
+      r.interimResults = false;
+      r.lang = 'en-US';
+      r.onresult = function(event) {
+        var t = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) t += event.results[i][0].transcript;
+        }
+        onResult(t);
+      };
+      r.onerror = function(e) { _activeRecognition = null; onEnd(e.error || 'error'); };
+      r.onend = function() { _activeRecognition = null; onEnd(''); };
+      _activeRecognition = r;
+      r.start();
+    };
+
+    window.advocateStopSpeech = function() {
+      if (_activeRecognition) {
+        try { _activeRecognition.stop(); } catch(e) {}
+        _activeRecognition = null;
+      }
+    };
+  </script>
 </body>
 </html>

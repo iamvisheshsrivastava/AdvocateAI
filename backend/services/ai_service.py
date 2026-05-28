@@ -366,19 +366,21 @@ def generate_chat_response(user_message: str, context: str = "", actor_key: str 
     if not cache_service.allow_request("chat_response", actor_key, limit=30, window_seconds=60):
         return "You have reached the temporary AI request limit. Please wait a moment and try again."
 
-    final_prompt = user_message if not context else f"""
-User question: {user_message}
+    final_prompt = f"""You are AdvocateAI, a helpful legal information assistant for Germany.
+The user has sent this message:
 
-Use the following professionals to answer:
-{context}
+{user_message}
 
-Rules:
+{f"Top matching professionals currently on the platform:{chr(10)}{context}" if context else ""}
+
+Instructions:
+- Reply in a natural, friendly, conversational tone — like a knowledgeable assistant, not a database query.
+- Do NOT output raw metadata fields like "Location:", "Urgency:", "Confidence:", "Reasoning:", or "Recommended Action:" as plain text lines.
+- Do NOT format your reply as structured JSON or key-value pairs.
 - Treat Germany as the default jurisdiction unless stated otherwise.
-- Avoid presenting the answer as legal advice.
-- Be explicit when facts are missing or uncertain.
-- When possible, point to the type of authority or document the user should verify.
-
-Respond naturally and recommend the best options.
+- Do NOT present your response as formal legal advice.
+- Be concise and practical. If you're unsure, say so.
+- If relevant professionals were provided above, mention them naturally by name.
 """
 
     try:

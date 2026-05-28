@@ -18,6 +18,7 @@ class LawyerDashboardPage extends StatefulWidget {
 
 class _LawyerDashboardPageState extends State<LawyerDashboardPage> {
   int? lawyerId;
+  String lawyerName = '';
   bool isLoading = true;
 
   @override
@@ -34,6 +35,20 @@ class _LawyerDashboardPageState extends State<LawyerDashboardPage> {
       lawyerId = id;
       isLoading = false;
     });
+
+    if (id != null) {
+      try {
+        final resp = await http.get(Uri.parse('${ApiConfig.baseUrl}/lawyer/profile/$id'));
+        if (!mounted) return;
+        if (resp.statusCode == 200) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final name = data['name']?.toString() ?? '';
+          if (name.isNotEmpty) {
+            setState(() => lawyerName = name);
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _logout() async {
@@ -70,7 +85,7 @@ class _LawyerDashboardPageState extends State<LawyerDashboardPage> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            _HeroBanner(lawyerId: lawyerId!),
+            _HeroBanner(lawyerName: lawyerName),
             const SizedBox(height: 16),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -120,12 +135,13 @@ class _LawyerDashboardPageState extends State<LawyerDashboardPage> {
 }
 
 class _HeroBanner extends StatelessWidget {
-  final int lawyerId;
+  final String lawyerName;
 
-  const _HeroBanner({required this.lawyerId});
+  const _HeroBanner({required this.lawyerName});
 
   @override
   Widget build(BuildContext context) {
+    final greeting = lawyerName.isNotEmpty ? 'Welcome back, $lawyerName 👋' : 'Welcome back';
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -139,19 +155,23 @@ class _HeroBanner extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            greeting,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
           const Text(
             'Manage discovery, applications, and client communication in one place.',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 28,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
               height: 1.15,
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Lawyer ID: #$lawyerId',
-            style: const TextStyle(color: Colors.white70),
           ),
         ],
       ),

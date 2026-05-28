@@ -177,13 +177,33 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             ),
                           ),
                           title: Text(item['message']?.toString() ?? ''),
-                          subtitle: Text(item['created_at']?.toString() ?? ''),
+                          subtitle: Text(_formatDate(item['created_at']?.toString())),
                         ),
                       );
                     },
                   ),
                 ),
     );
+  }
+
+  String _formatDate(String? isoString) {
+    if (isoString == null || isoString.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inSeconds < 60) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      final month = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      ][dt.month - 1];
+      return '${dt.day} $month ${dt.year}';
+    } catch (_) {
+      return isoString ?? '';
+    }
   }
 
   IconData _iconForType(String type) {

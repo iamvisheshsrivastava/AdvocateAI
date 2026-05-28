@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:js_interop';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -15,6 +16,17 @@ import 'config.dart';
 import 'login_page.dart';
 import 'premium_page.dart';
 import 'client_cases_page.dart';
+
+// ── JS interop for Web Speech API ────────────────────────────────────────────
+@JS('advocateSpeechAvailable')
+external bool _jsSpeechAvailable();
+
+@JS('advocateStartSpeech')
+external void _jsStartSpeech(JSFunction onResult, JSFunction onEnd);
+
+@JS('advocateStopSpeech')
+external void _jsStopSpeech();
+// ─────────────────────────────────────────────────────────────────────────────
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -48,16 +60,69 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   final ImagePicker imagePicker = ImagePicker();
 
+  // Speech-to-text (Web Speech API via JS interop)
+  bool _speechAvailable = false;
+  bool _isListening = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _validateSessionAndLoadUser();
+    _initSpeech();
+  }
+
+  void _initSpeech() {
+    try {
+      setState(() => _speechAvailable = _jsSpeechAvailable());
+    } catch (_) {
+      setState(() => _speechAvailable = false);
+    }
+  }
+
+  void _toggleListening() {
+    if (!_speechAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition is not available. Please use Chrome.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (_isListening) {
+      _jsStopSpeech();
+      setState(() => _isListening = false);
+      return;
+    }
+
+    setState(() => _isListening = true);
+
+    _jsStartSpeech(
+      (JSString transcript) {
+        final words = transcript.toDart.trim();
+        if (words.isNotEmpty && mounted) {
+          setState(() {
+            final current = messageController.text;
+            messageController.text =
+                current.isEmpty ? words : '$current $words';
+            messageController.selection = TextSelection.fromPosition(
+              TextPosition(offset: messageController.text.length),
+            );
+          });
+        }
+      }.toJS,
+      (JSString reason) {
+        if (mounted) setState(() => _isListening = false);
+      }.toJS,
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_isListening) _jsStopSpeech();
     messageController.dispose();
     documentQuestionController.dispose();
     scrollController.dispose();
@@ -655,8 +720,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             ),
                             const SizedBox(height: 8),
                             TextButton(
-                              onPressed: () {},
-                              child: const Text('See how it works.'),
+                              onPressed: () => _showHowItWorksDialog(context),
+                              child: const Text('See how it works →'),
                             ),
 
                             const SizedBox(height: 22),
@@ -692,65 +757,77 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               _buildLegalActionGuideCard(),
                             ],
 
-                            const SizedBox(height: 16),
-                            _buildDocumentCaptureCard(),
-
-                            if (latestDocumentAnalysis != null) ...[
-                              const SizedBox(height: 16),
-                              _buildDocumentAnalysisCard(context),
-                            ],
-
-                            if (latestDocumentIntelligence?.isNotEmpty ?? false) ...[
-                              const SizedBox(height: 16),
-                              CaseIntelligenceCard(
-                                data: latestDocumentIntelligence!,
-                                title: 'Document Readiness',
-                                accentColor: const Color(0xFF027A48),
-                              ),
-                            ],
-
-                            if (latestDocumentBatchId != null) ...[
-                              const SizedBox(height: 16),
-                              _buildDocumentQaCard(),
-                            ],
-
-                            SizedBox(
-                              height: 300,
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 80, maxHeight: 520),
                               child: ListView.builder(
                                 controller: scrollController,
+                                shrinkWrap: true,
                                 itemCount: messages.length,
                                 itemBuilder: (context, index) {
                                   final msg = messages[index];
                                   final isUser = msg["role"] == "user";
+                                  final isThinking = msg["text"] == "Thinking...";
 
                                   return Align(
                                     alignment:
                                         isUser ? Alignment.centerRight : Alignment.centerLeft,
                                     child: Container(
-                                      margin: const EdgeInsets.symmetric(vertical: 6),
-                                      padding: const EdgeInsets.all(12),
+                                      margin: const EdgeInsets.symmetric(vertical: 5),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                      constraints: const BoxConstraints(maxWidth: 720),
                                       decoration: BoxDecoration(
-                                        color: isUser ? Colors.blue : Colors.grey.shade200,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: MarkdownBody(
-                                        data: msg["text"] ?? "",
-                                        styleSheet: MarkdownStyleSheet(
-                                          p: TextStyle(
-                                            color: isUser ? Colors.white : Colors.black,
-                                            fontSize: 15,
-                                          ),
-                                          strong: const TextStyle(fontWeight: FontWeight.bold),
-                                          code: const TextStyle(
-                                            backgroundColor: Color(0xFFEFEFEF),
-                                            fontFamily: 'monospace',
-                                          ),
-                                          codeblockDecoration: BoxDecoration(
-                                            color: const Color(0xFFF4F4F4),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
+                                        color: isUser
+                                            ? const Color(0xFF1E88E5)
+                                            : const Color(0xFFF3F4F6),
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: const Radius.circular(16),
+                                          topRight: const Radius.circular(16),
+                                          bottomLeft: isUser ? const Radius.circular(16) : const Radius.circular(4),
+                                          bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(16),
                                         ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.05),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
                                       ),
+                                      child: isThinking
+                                          ? Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const SizedBox(
+                                                  width: 14, height: 14,
+                                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E88E5)),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text('Thinking…', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                                              ],
+                                            )
+                                          : MarkdownBody(
+                                              data: msg["text"] ?? "",
+                                              styleSheet: MarkdownStyleSheet(
+                                                p: TextStyle(
+                                                  color: isUser ? Colors.white : const Color(0xFF1A202C),
+                                                  fontSize: 14.5,
+                                                  height: 1.45,
+                                                ),
+                                                strong: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isUser ? Colors.white : const Color(0xFF1A202C),
+                                                ),
+                                                code: const TextStyle(
+                                                  backgroundColor: Color(0xFFEFEFEF),
+                                                  fontFamily: 'monospace',
+                                                  fontSize: 13,
+                                                ),
+                                                codeblockDecoration: BoxDecoration(
+                                                  color: const Color(0xFFF4F4F4),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                              ),
+                                            ),
                                     ),
                                   );
                                 },
@@ -784,8 +861,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     ),
                                   ),
                                   IconButton(
-                                    onPressed: () {},
-                                    icon: const Icon(Icons.mic, color: Colors.blue),
+                                    onPressed: _toggleListening,
+                                    tooltip: _isListening ? 'Stop recording' : 'Speak your question',
+                                    icon: Icon(
+                                      _isListening ? Icons.mic : Icons.mic_none,
+                                      color: _isListening ? Colors.red : Colors.blue,
+                                    ),
                                   ),
                                   ElevatedButton(
                                     onPressed: sendMessage,
@@ -803,7 +884,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             const SizedBox(height: 18),
 
                             // small helper chips below
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
                                 ActionChip(
                                   avatar: isUploadingDocument
@@ -818,13 +901,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                   ),
                                   onPressed: isUploadingDocument ? null : _uploadAndAnalyzeDocument,
                                 ),
-                                const SizedBox(width: 8),
                                 ActionChip(
                                   avatar: const Icon(Icons.photo_camera_outlined, size: 18),
                                   label: const Text('Camera'),
                                   onPressed: isUploadingDocument ? null : _captureWithCamera,
                                 ),
-                                const SizedBox(width: 8),
                                 ActionChip(
                                   avatar: const Icon(Icons.collections_outlined, size: 18),
                                   label: const Text('Files'),
@@ -832,6 +913,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 ),
                               ],
                             ),
+
+                            // Document capture card (shown below chat input)
+                            if (pendingUploads.isNotEmpty || latestDocumentAnalysis != null || latestDocumentBatchId != null) ...[
+                              const SizedBox(height: 16),
+                              _buildDocumentCaptureCard(),
+                            ] else ...[
+                              const SizedBox(height: 16),
+                              _buildDocumentCaptureCard(),
+                            ],
+
+                            if (latestDocumentAnalysis != null) ...[
+                              const SizedBox(height: 16),
+                              _buildDocumentAnalysisCard(context),
+                            ],
+
+                            if (latestDocumentIntelligence?.isNotEmpty ?? false) ...[
+                              const SizedBox(height: 16),
+                              CaseIntelligenceCard(
+                                data: latestDocumentIntelligence!,
+                                title: 'Document Readiness',
+                                accentColor: const Color(0xFF027A48),
+                              ),
+                            ],
+
+                            if (latestDocumentBatchId != null) ...[
+                              const SizedBox(height: 16),
+                              _buildDocumentQaCard(),
+                            ],
                           ],
                         ),
                       ),
@@ -842,6 +951,64 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showHowItWorksDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.auto_awesome, color: Color(0xFF1E63E9)),
+            SizedBox(width: 10),
+            Text('How AdvocateAI Works'),
+          ],
+        ),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              _HowItWorksStep(
+                step: '1',
+                icon: Icons.search_outlined,
+                title: 'Describe your legal issue',
+                description:
+                    'Type your situation in plain language — no legal jargon needed. Use the quick-start chips or the mic button if you prefer to speak.',
+              ),
+              _HowItWorksStep(
+                step: '2',
+                icon: Icons.auto_awesome_outlined,
+                title: 'AI analysis & matching',
+                description:
+                    'AdvocateAI instantly analyses your case, identifies the legal area, and finds the best-matched lawyers on the platform for you.',
+              ),
+              _HowItWorksStep(
+                step: '3',
+                icon: Icons.folder_open_outlined,
+                title: 'Create & manage your case',
+                description:
+                    'Submit a formal case to the marketplace, upload documents, and track every update from one place.',
+              ),
+              _HowItWorksStep(
+                step: '4',
+                icon: Icons.handshake_outlined,
+                title: 'Connect with your lawyer',
+                description:
+                    'Review lawyer applications, accept the right match, and collaborate in a dedicated workspace.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it'),
+          ),
+        ],
       ),
     );
   }
@@ -900,33 +1067,67 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ],
             ),
             const SizedBox(height: 12),
-            Text('Legal Area: $legalArea'),
-            const SizedBox(height: 4),
-            Text('Issue Type: $issueType'),
-            const SizedBox(height: 4),
-            Text('Location: $location'),
-            const SizedBox(height: 4),
-            Text('Urgency: $urgency'),
-            const SizedBox(height: 4),
-            Text('Confidence: $confidence'),
+            // Styled metadata pills
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (legalArea != 'N/A' && legalArea.isNotEmpty)
+                  _MetaPill(icon: Icons.gavel_outlined, label: legalArea, color: const Color(0xFF1E88E5)),
+                if (issueType != 'N/A' && issueType.isNotEmpty)
+                  _MetaPill(icon: Icons.category_outlined, label: issueType, color: const Color(0xFF7C3AED)),
+                if (location != 'Unknown' && location.isNotEmpty)
+                  _MetaPill(icon: Icons.location_on_outlined, label: location, color: const Color(0xFF059669)),
+                _MetaPill(
+                  icon: Icons.speed_outlined,
+                  label: 'Urgency: $urgency',
+                  color: urgency == 'High' ? const Color(0xFFDC2626) : urgency == 'Medium' ? const Color(0xFFD97706) : const Color(0xFF059669),
+                ),
+                _MetaPill(
+                  icon: Icons.verified_outlined,
+                  label: 'Confidence: $confidence',
+                  color: confidence == 'High' ? const Color(0xFF059669) : const Color(0xFFD97706),
+                ),
+              ],
+            ),
             if (summary.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Text(
                 summary,
-                style: const TextStyle(height: 1.35),
+                style: const TextStyle(height: 1.5, fontSize: 14),
               ),
             ],
-            if (reasoning.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text('Reasoning: $reasoning'),
-            ],
             if (recommendedAction.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text('Recommended Action: $recommendedAction'),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F7FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.lightbulb_outline, size: 16, color: Color(0xFF1E88E5)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(recommendedAction, style: const TextStyle(fontSize: 13, height: 1.4))),
+                  ],
+                ),
+              ),
             ],
             if (citations.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('Citations: ${citations.join(' • ')}'),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: citations.map((c) => Chip(
+                  label: Text(c, style: const TextStyle(fontSize: 11)),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                )).toList(),
+              ),
             ],
             const SizedBox(height: 10),
             Container(
@@ -1568,4 +1769,92 @@ IconData _iconForUpload(String fileName) {
   final normalized = fileName.toLowerCase();
   if (normalized.endsWith('.pdf')) return Icons.picture_as_pdf_outlined;
   return Icons.image_outlined;
+}
+
+class _HowItWorksStep extends StatelessWidget {
+  final String step;
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _HowItWorksStep({
+    required this.step,
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E63E9),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              step,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 18, color: const Color(0xFF1E63E9)),
+                    const SizedBox(width: 6),
+                    Text(title,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(description, style: const TextStyle(color: Colors.black54, fontSize: 13, height: 1.4)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _MetaPill({required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+          ),
+        ],
+      ),
+    );
+  }
 }
