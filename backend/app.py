@@ -131,17 +131,25 @@ async def health_details():
             )
             resp = _req.post(
                 url,
-                json={"contents": [{"parts": [{"text": "ping"}]}]},
+                json={"contents": [{"parts": [{"text": "Hello"}]}]},
                 timeout=8,
             )
-            resp.raise_for_status()
-            gemini_ok = True
+            if not resp.ok:
+                # Capture response body for diagnosis (API key sanitized below)
+                try:
+                    body = resp.json()
+                    gemini_error = f"HTTP {resp.status_code}: {body}"
+                except Exception:
+                    gemini_error = f"HTTP {resp.status_code}: {resp.text[:300]}"
+            else:
+                resp.raise_for_status()
+                gemini_ok = True
         except Exception as exc:
-            # Sanitize: strip the API key from the URL in error messages
-            raw = str(exc)
-            if GEMINI_API_KEY:
-                raw = raw.replace(GEMINI_API_KEY, "***")
-            gemini_error = raw
+            if gemini_error is None:
+                gemini_error = str(exc)
+        # Sanitize: strip the API key from error strings
+        if gemini_error and GEMINI_API_KEY:
+            gemini_error = gemini_error.replace(GEMINI_API_KEY, "***")
     else:
         gemini_error = "GEMINI_API_KEY not configured"
 
