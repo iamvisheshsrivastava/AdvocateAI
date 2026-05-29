@@ -20,7 +20,7 @@ def get_ai_config() -> AIConfig:
             return default
 
     return AIConfig(
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
         default_timeout_seconds=_int("GEMINI_DEFAULT_TIMEOUT", 20),
         analysis_timeout_seconds=_int("GEMINI_ANALYSIS_TIMEOUT", 35),
         brief_timeout_seconds=_int("GEMINI_BRIEF_TIMEOUT", 25),

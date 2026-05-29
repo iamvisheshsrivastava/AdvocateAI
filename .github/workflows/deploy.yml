@@ -164,7 +164,7 @@ jobs:
           REDIS_PORT=6379
           GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL=${{ secrets.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          GEMINI_MODEL=${{ secrets.GEMINI_MODEL || 'gemini-1.5-flash' }}
           GEMINI_DEFAULT_TIMEOUT=${{ secrets.GEMINI_DEFAULT_TIMEOUT || '20' }}
           GEMINI_ANALYSIS_TIMEOUT=${{ secrets.GEMINI_ANALYSIS_TIMEOUT || '35' }}
           GEMINI_BRIEF_TIMEOUT=${{ secrets.GEMINI_BRIEF_TIMEOUT || '25' }}
