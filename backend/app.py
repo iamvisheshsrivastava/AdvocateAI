@@ -115,16 +115,40 @@ async def health():
 
 @app.get("/health")
 async def health_details():
+    from services.ai_service import GEMINI_API_KEY, AI_CONFIG
     db_ok, db_error = _check_database_connection()
+
+    # Quick Gemini connectivity probe (cheap: tiny prompt, short timeout)
+    gemini_ok = False
+    gemini_error = None
+    if GEMINI_API_KEY:
+        try:
+            import requests as _req
+            model = AI_CONFIG.gemini_model
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={GEMINI_API_KEY}"
+            )
+            resp = _req.post(
+                url,
+                json={"contents": [{"parts": [{"text": "ping"}]}]},
+                timeout=8,
+            )
+            resp.raise_for_status()
+            gemini_ok = True
+        except Exception as exc:
+            gemini_error = str(exc)
+    else:
+        gemini_error = "GEMINI_API_KEY not configured"
+
+    overall_ok = db_ok and gemini_ok
     payload = {
-        "status": "ok" if db_ok else "degraded",
+        "status": "ok" if overall_ok else "degraded",
         "service": "AdvocateAI",
         "version": app.version,
         "started_at": app_started_at.isoformat(),
         "uptime_seconds": max(0, int((datetime.now(timezone.utc) - app_started_at).total_seconds())),
-        "database": {
-            "ok": db_ok,
-            "error": db_error,
-        },
+        "database": {"ok": db_ok, "error": db_error},
+        "gemini": {"ok": gemini_ok, "model": AI_CONFIG.gemini_model, "error": gemini_error},
     }
     return JSONResponse(status_code=200 if db_ok else 503, content=payload)

@@ -12,7 +12,8 @@ logger = get_logger(__name__)
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Accept either GEMINI_API_KEY or GOOGLE_API_KEY — many users set only one.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 LEGAL_DEFAULT_AREA = "General Legal"
 AI_CONFIG = get_ai_config()
 
