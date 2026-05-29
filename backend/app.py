@@ -137,7 +137,11 @@ async def health_details():
             resp.raise_for_status()
             gemini_ok = True
         except Exception as exc:
-            gemini_error = str(exc)
+            # Sanitize: strip the API key from the URL in error messages
+            raw = str(exc)
+            if GEMINI_API_KEY:
+                raw = raw.replace(GEMINI_API_KEY, "***")
+            gemini_error = raw
     else:
         gemini_error = "GEMINI_API_KEY not configured"
 
