@@ -1,15 +1,13 @@
 fastapi
 uvicorn
 psycopg2-binary
-sentence-transformers
+fastembed
 pydantic
 python-dotenv
 requests
 pdfplumber
 python-multipart
 redis
-langchain
-llama-index-core
 pymupdf
 scikit-learn
 joblib

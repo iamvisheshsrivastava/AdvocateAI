@@ -1,0 +1,35 @@
+# Per-Dockerfile ignore for Dockerfile.nginx.
+# Only the pre-built Flutter web files and nginx config are needed.
+# Everything else is excluded to keep the build context small.
+.git
+.github
+.pytest_cache
+.venv
+venv
+__pycache__
+*.pyc
+*.log
+.env
+.env.*
+backend
+mlruns
+artifacts
+node_modules
+tests
+gen_pdf.py
+requirements*.txt
+docker-compose*.yml
+test_app/.dart_tool
+test_app/.flutter-plugins
+test_app/.flutter-plugins-dependencies
+test_app/.pub
+test_app/android
+test_app/ios
+test_app/linux
+test_app/macos
+test_app/windows
+test_app/test
+test_app/lib
+test_app/pubspec.yaml
+test_app/pubspec.lock
+# NOTE: test_app/build/web is intentionally NOT excluded — it is the build output

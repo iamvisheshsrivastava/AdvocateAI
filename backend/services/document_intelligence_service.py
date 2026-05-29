@@ -36,28 +36,24 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     fitz = None
 
-try:
-    from langchain.prompts import PromptTemplate
-except Exception:  # pragma: no cover - optional dependency
-    class PromptTemplate:  # type: ignore[no-redef]
-        def __init__(self, template: str):
-            self.template = template
+# PromptTemplate: lightweight inline implementation (no langchain dependency).
+class PromptTemplate:
+    def __init__(self, template: str):
+        self.template = template
 
-        @classmethod
-        def from_template(cls, template: str):
-            return cls(template)
+    @classmethod
+    def from_template(cls, template: str):
+        return cls(template)
 
-        def format(self, **kwargs):
-            return self.template.format(**kwargs)
+    def format(self, **kwargs):
+        return self.template.format(**kwargs)
 
 
-try:
-    from llama_index.core import Document, VectorStoreIndex
-    from llama_index.core.embeddings import BaseEmbedding
-except Exception:  # pragma: no cover - optional dependency
-    Document = None
-    VectorStoreIndex = None
-    BaseEmbedding = object
+# llama-index is not installed; use None sentinels so the retrieval path
+# degrades gracefully to returning an empty list.
+Document = None
+VectorStoreIndex = None
+BaseEmbedding = object
 
 
 @dataclass

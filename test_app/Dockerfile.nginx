@@ -1,0 +1,12 @@
+# Minimal frontend image: pre-built Flutter web files served by nginx.
+# Flutter is compiled in GitHub Actions (natively, not inside Docker),
+# so this image is just nginx:alpine + static assets — builds in seconds.
+FROM nginx:1.27-alpine
+
+COPY test_app/nginx.conf /etc/nginx/conf.d/default.conf
+COPY test_app/build/web /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1

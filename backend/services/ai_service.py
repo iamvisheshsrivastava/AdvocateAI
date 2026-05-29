@@ -17,26 +17,43 @@ LEGAL_DEFAULT_AREA = "General Legal"
 AI_CONFIG = get_ai_config()
 
 
-class _LazySentenceTransformerModel:
+class _LazyFastEmbedModel:
+    """Lazy-loaded fastembed model (ONNX-based, no PyTorch dependency).
+
+    Produces the same 384-dim all-MiniLM-L6-v2 embeddings as the previous
+    sentence-transformers implementation, so stored DB embeddings remain valid.
+    """
+
     def __init__(self, model_name: str):
         self._model_name = model_name
         self._model = None
 
     def _load(self):
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            from fastembed import TextEmbedding  # ~100 MB vs 2.5 GB for torch
 
-            self._model = SentenceTransformer(self._model_name)
+            self._model = TextEmbedding(model_name=self._model_name)
         return self._model
 
-    def encode(self, *args, **kwargs):
-        return self._load().encode(*args, **kwargs)
+    def encode(self, text, **kwargs):  # noqa: ANN001
+        """Return a flat list of floats (single text) matching sentence-transformers API."""
+        import numpy as np
+
+        model = self._load()
+        if isinstance(text, str):
+            embeddings = list(model.embed([text]))
+            arr = embeddings[0]
+        else:
+            embeddings = list(model.embed(list(text)))
+            arr = np.array(embeddings)
+        # Return numpy array to match sentence-transformers .encode() behaviour
+        return arr
 
     def __getattr__(self, item):
         return getattr(self._load(), item)
 
 
-embed_model = _LazySentenceTransformerModel("all-MiniLM-L6-v2")
+embed_model = _LazyFastEmbedModel("sentence-transformers/all-MiniLM-L6-v2")
 
 
 def extract_json_object(text: str) -> dict:
