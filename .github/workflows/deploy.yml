@@ -65,10 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Install Flutter SDK (cached between runs)
+      # Install Flutter SDK (cached between runs).
+      # Must match pubspec.yaml sdk: ^3.11.0 — Flutter 3.41.x ships with Dart 3.11.
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.32.0"
+          flutter-version: "3.41.8"
           channel: "stable"
           cache: true
 
