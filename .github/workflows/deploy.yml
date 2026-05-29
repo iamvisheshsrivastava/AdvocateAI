@@ -148,8 +148,8 @@ jobs:
           ssh "$DO_USER@$DO_HOST" "cat > '$DO_DEPLOY_PATH/.env.production'" << ENVEOF
           PUBLIC_APP_URL=${{ secrets.PUBLIC_APP_URL }}
           PUBLIC_API_BASE_URL=${{ secrets.PUBLIC_API_BASE_URL }}
-          CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
-          CORS_ALLOW_ORIGIN_REGEX=${{ secrets.CORS_ALLOW_ORIGIN_REGEX }}
+          CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS || 'https://advocateai.duckdns.org,http://advocateai.duckdns.org,http://159.89.163.233' }}
+          CORS_ALLOW_ORIGIN_REGEX=${{ secrets.CORS_ALLOW_ORIGIN_REGEX || 'https?://(localhost|127\.0\.0\.1|advocateai\.duckdns\.org)(:\d+)?' }}
           LOG_LEVEL=${{ secrets.LOG_LEVEL || 'INFO' }}
           DB_HOST=db
           DB_PORT=5432
@@ -181,6 +181,8 @@ jobs:
           WANDB_MODE=offline
           BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/advocateai-backend:latest
           FRONTEND_IMAGE=ghcr.io/${{ github.repository_owner }}/advocateai-frontend:latest
+          DOMAIN=${{ secrets.DOMAIN || 'advocateai.duckdns.org' }}
+          ACME_EMAIL=${{ secrets.ACME_EMAIL || 'srivastava.vishesh9@gmail.com' }}
           ENVEOF
           ssh "$DO_USER@$DO_HOST" "sed -i 's/^[[:space:]]*//' '$DO_DEPLOY_PATH/.env.production'"
 

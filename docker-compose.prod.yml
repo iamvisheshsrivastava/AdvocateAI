@@ -1,4 +1,29 @@
 services:
+  # ── Traefik: reverse proxy + automatic Let's Encrypt SSL ─────────────────
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    ports:
+      - "80:80"       # HTTP — used for ACME challenge + redirect to HTTPS
+      - "443:443"     # HTTPS — TLS termination
+    command:
+      - "--log.level=INFO"
+      - "--api.dashboard=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      # Entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Let's Encrypt (HTTP-01 challenge, free cert, auto-renewed)
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+
+  # ── Database ──────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -14,6 +39,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Redis cache ───────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -26,6 +52,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── FastAPI backend ───────────────────────────────────────────────────────
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/iamvisheshsrivastava/advocateai-backend:latest}
     restart: unless-stopped
@@ -47,14 +74,33 @@ services:
     expose:
       - "8000"
 
+  # ── Flutter frontend (nginx) served via Traefik ───────────────────────────
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/iamvisheshsrivastava/advocateai-frontend:latest}
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
-      - "80:80"
+    expose:
+      - "80"
+    labels:
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+
+      # ── HTTPS router (primary) ──────────────────────────────────────────
+      - "traefik.http.routers.frontend-https.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.frontend-https.entrypoints=websecure"
+      - "traefik.http.routers.frontend-https.tls=true"
+      - "traefik.http.routers.frontend-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+      # ── HTTP router → redirect to HTTPS ────────────────────────────────
+      - "traefik.http.routers.frontend-http.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.frontend-http.entrypoints=web"
+      - "traefik.http.routers.frontend-http.middlewares=https-redirect"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
 
 volumes:
   postgres_data:
   redis_data:
+  letsencrypt:    # Persists Let's Encrypt certificates across restarts
