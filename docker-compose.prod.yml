@@ -1,32 +1,19 @@
 services:
-  # ── nginx-proxy: auto-configures nginx from VIRTUAL_HOST env vars ────────
-  nginx-proxy:
-    image: nginxproxy/nginx-proxy:1.6
+  # ── Caddy: reverse proxy + automatic Let's Encrypt SSL ───────────────────
+  # One-line Caddyfile: advocateai.duckdns.org { reverse_proxy frontend:80 }
+  # Caddy handles HTTP→HTTPS redirect, cert issuance, and auto-renewal.
+  caddy:
+    image: caddy:2.9-alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/tmp/docker.sock:ro
-      - nginx-certs:/etc/nginx/certs
-      - nginx-vhosts:/etc/nginx/vhost.d
-      - nginx-html:/usr/share/nginx/html
-
-  # ── acme-companion: gets + auto-renews Let's Encrypt certs ───────────────
-  acme-companion:
-    image: nginxproxy/acme-companion:2.4
-    restart: unless-stopped
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # Persists TLS certs across restarts
+      - caddy-config:/config
     depends_on:
-      - nginx-proxy
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - nginx-certs:/etc/nginx/certs
-      - nginx-vhosts:/etc/nginx/vhost.d
-      - nginx-html:/usr/share/nginx/html
-      - acme-state:/etc/acme.sh
-    environment:
-      NGINX_PROXY_CONTAINER: nginx-proxy
-      DEFAULT_EMAIL: srivastava.vishesh9@gmail.com
+      - frontend
 
   # ── Database ──────────────────────────────────────────────────────────────
   db:
@@ -80,9 +67,8 @@ services:
       - "8000"
 
   # ── Flutter frontend (nginx) ──────────────────────────────────────────────
-  # nginx-proxy routes traffic here via VIRTUAL_HOST.
-  # acme-companion issues the Let's Encrypt cert via LETSENCRYPT_HOST.
-  # The internal nginx.conf proxies /api/* to the backend service.
+  # Caddy reverse-proxies to this container.
+  # The internal nginx.conf serves Flutter files and proxies /api/* → backend.
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/iamvisheshsrivastava/advocateai-frontend:latest}
     restart: unless-stopped
@@ -90,15 +76,9 @@ services:
       - backend
     expose:
       - "80"
-    environment:
-      VIRTUAL_HOST: advocateai.duckdns.org
-      VIRTUAL_PORT: "80"
-      LETSENCRYPT_HOST: advocateai.duckdns.org
 
 volumes:
   postgres_data:
   redis_data:
-  nginx-certs:
-  nginx-vhosts:
-  nginx-html:
-  acme-state:
+  caddy-data:
+  caddy-config:
