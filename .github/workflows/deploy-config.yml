@@ -1,13 +1,16 @@
-name: Deploy config-only (no rebuild)
+name: Deploy backend-only (no Flutter rebuild)
 
-# Use this when only backend config / env vars changed — no code or Flutter changes.
-# Runs in ~1 minute instead of ~20 minutes.
+# Use this when only backend Python / config changed.
+# Builds and deploys a new backend image in ~2-3 min, skipping the 20-min Flutter build.
 on:
   workflow_dispatch:
 
 jobs:
-  deploy-config:
+  deploy-backend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER || 'root' }}
@@ -15,6 +18,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/advocateai-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
       - name: Setup SSH
         run: |
@@ -66,8 +87,10 @@ jobs:
           ENVEOF
           ssh "$DO_USER@$DO_HOST" "sed -i 's/^[[:space:]]*//' '$DO_DEPLOY_PATH/.env.production'"
 
-      - name: Restart backend with new config (no rebuild)
+      - name: Pull new backend image and restart
         run: |
+          ssh "$DO_USER@$DO_HOST" "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
           ssh "$DO_USER@$DO_HOST" "cd '$DO_DEPLOY_PATH' && \
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build backend && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml pull backend && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d backend && \
             docker compose --env-file .env.production -f docker-compose.prod.yml ps"
