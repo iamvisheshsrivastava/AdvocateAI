@@ -31,9 +31,51 @@ jobs:
       - name: Validate Docker Compose Config
         run: docker compose --env-file .env.example -f docker-compose.prod.yml config
 
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     needs: test
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/advocateai-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: test_app/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/advocateai-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
     if: github.ref == 'refs/heads/main'
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -65,15 +107,9 @@ jobs:
             --exclude 'artifacts' \
             ./ "$DO_USER@$DO_HOST:$DO_DEPLOY_PATH/"
 
-      - name: Deploy Docker Stack
+      - name: Write production env file on server
         run: |
-          ssh "$DO_USER@$DO_HOST" << EOF
-          set -euo pipefail
-
-          DEPLOY_PATH="${{ secrets.DO_DEPLOY_PATH || '/root/AdvocateAI' }}"
-          cd "\$DEPLOY_PATH"
-
-          cat > .env.production << 'EOT'
+          ssh "$DO_USER@$DO_HOST" "cat > '$DO_DEPLOY_PATH/.env.production'" << ENVEOF
           PUBLIC_APP_URL=${{ secrets.PUBLIC_APP_URL }}
           PUBLIC_API_BASE_URL=${{ secrets.PUBLIC_API_BASE_URL }}
           CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
@@ -98,18 +134,24 @@ jobs:
           GEMINI_BRIEF_TIMEOUT=${{ secrets.GEMINI_BRIEF_TIMEOUT || '25' }}
           GEMINI_CHAT_TIMEOUT=${{ secrets.GEMINI_CHAT_TIMEOUT || '25' }}
           GEMINI_DOCUMENT_TIMEOUT=${{ secrets.GEMINI_DOCUMENT_TIMEOUT || '30' }}
-          MLOPS_ENABLED=${{ secrets.MLOPS_ENABLED || 'false' }}
-          MLOPS_LOG_PROMPTS=${{ secrets.MLOPS_LOG_PROMPTS || 'false' }}
-          MLFLOW_ENABLED=${{ secrets.MLFLOW_ENABLED || 'false' }}
+          MLOPS_ENABLED=false
+          MLOPS_LOG_PROMPTS=false
+          MLFLOW_ENABLED=false
           MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
-          MLFLOW_EXPERIMENT_NAME=${{ secrets.MLFLOW_EXPERIMENT_NAME || 'AdvocateAI' }}
-          WANDB_ENABLED=${{ secrets.WANDB_ENABLED || 'false' }}
-          WANDB_PROJECT=${{ secrets.WANDB_PROJECT || 'AdvocateAI' }}
+          MLFLOW_EXPERIMENT_NAME=AdvocateAI
+          WANDB_ENABLED=false
+          WANDB_PROJECT=AdvocateAI
           WANDB_ENTITY=${{ secrets.WANDB_ENTITY }}
-          WANDB_MODE=${{ secrets.WANDB_MODE || 'offline' }}
-          EOT
+          WANDB_MODE=offline
+          BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/advocateai-backend:latest
+          FRONTEND_IMAGE=ghcr.io/${{ github.repository_owner }}/advocateai-frontend:latest
+          ENVEOF
+          ssh "$DO_USER@$DO_HOST" "sed -i 's/^[[:space:]]*//' '$DO_DEPLOY_PATH/.env.production'"
 
-          sed -i 's/^[[:space:]]*//' .env.production
-          docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans
-          docker compose --env-file .env.production -f docker-compose.prod.yml ps
-          EOF
+      - name: Pull images and start containers
+        run: |
+          ssh "$DO_USER@$DO_HOST" "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          ssh "$DO_USER@$DO_HOST" "cd '$DO_DEPLOY_PATH' && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml pull && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans && \
+            docker compose --env-file .env.production -f docker-compose.prod.yml ps"
