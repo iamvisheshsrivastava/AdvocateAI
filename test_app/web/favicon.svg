@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Navy background circle -->
+  <circle cx="16" cy="16" r="16" fill="#0B1D3E"/>
+  <!-- Scales of justice (simplified) -->
+  <!-- Top beam -->
+  <rect x="15.5" y="7" width="1" height="14" fill="white" rx="0.5"/>
+  <rect x="8" y="10.5" width="16" height="1" fill="white" rx="0.5"/>
+  <!-- Left pan -->
+  <path d="M8.5 11.5 L6 17 Q8.5 19 11 17 Z" fill="none" stroke="white" stroke-width="0.8"/>
+  <!-- Right pan -->
+  <path d="M23.5 11.5 L21 17 Q23.5 19 26 17 Z" fill="none" stroke="white" stroke-width="0.8"/>
+  <!-- Base -->
+  <rect x="13" y="21" width="6" height="1" fill="white" rx="0.5"/>
+  <rect x="14.5" y="21" width="3" height="0.5" fill="white" rx="0.25"/>
+</svg>

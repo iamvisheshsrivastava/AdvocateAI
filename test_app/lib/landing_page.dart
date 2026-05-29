@@ -59,7 +59,6 @@ class _LandingPageState extends State<LandingPage>
                 slide: _heroSlide,
                 onGetStarted: _goSignup,
                 onLogin: _goLogin),
-            _StatsBar(),
             _FeaturesSection(compact: compact),
             _HowItWorksSection(compact: compact),
             _ForLawyersSection(compact: compact),
@@ -511,55 +510,6 @@ class _LawyerCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ── Stats bar ─────────────────────────────────────────────────────────────────
-
-class _StatsBar extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 40),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 64,
-        runSpacing: 24,
-        children: const [
-          _Stat('2 000+', 'Verified Lawyers'),
-          _Stat('12 000+', 'Cases Resolved'),
-          _Stat('50+', 'Legal Areas'),
-          _Stat('4.9 / 5', 'Client Rating'),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  final String value;
-  final String label;
-  const _Stat(this.value, this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(value,
-            style: GoogleFonts.poppins(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: AppColors.navy)),
-        const SizedBox(height: 4),
-        Text(label,
-            style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textSecondary)),
-      ],
     );
   }
 }
