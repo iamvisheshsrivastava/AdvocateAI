@@ -235,6 +235,10 @@ The backend can also run entirely on free-tier managed services instead of a Dig
 
 Render's free instance spins down after inactivity (cold start ~30-50s on the next request). Check backend health at `/health`, which reports database and LLM connectivity.
 
+**Live deployment:**
+- Frontend: https://advocateai-1va.pages.dev
+- Backend API: https://advocateai-backend.onrender.com (health: `/health`)
+
 ## Demo Login
 
 ### Client
