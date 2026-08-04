@@ -26,7 +26,7 @@ The current build is focused on making the first steps of legal help easier: und
 **Backend & APIs:** FastAPI, Python, Uvicorn  
 **RAG & Retrieval:** LangChain, LlamaIndex, semantic chunking, retrieval-augmented generation  
 **Vector Storage:** FAISS (local similarity search), Qdrant (production vector retrieval), PostgreSQL with pgvector (hybrid relational + vector storage)  
-**LLM Frameworks:** HuggingFace Transformers, OpenAI API  
+**LLM Provider:** OpenRouter (free-tier models — `openai/gpt-oss-20b:free` for text, `google/gemma-4-31b-it:free` for document image analysis)  
 **Fine-Tuning:** Optional LoRA/QLoRA adapter training via `backend/train_lora.py`  
 **MLOps:** MLflow experiment tracking, Weights & Biases, Hydra config management  
 **Frontend:** Flutter (Dart), Chrome target  
@@ -40,7 +40,7 @@ The AI pipeline follows a RAG (Retrieval-Augmented Generation) flow:
 2. Document is chunked and converted into vector embeddings
 3. Embeddings are stored in a vector store (FAISS locally, Qdrant in production, pgvector for hybrid queries)
 4. On user query, relevant chunks are retrieved via semantic similarity search
-5. Retrieved context is passed to an LLM (OpenAI API or HuggingFace model) with a structured prompt via LangChain/LlamaIndex
+5. Retrieved context is passed to an LLM (via OpenRouter) with a structured prompt via LangChain/LlamaIndex
 6. LLM returns a structured response: case summary, extracted entities, urgency signals, and next-step guidance
 7. Optional: LoRA/QLoRA fine-tuning adapters can be trained and wired into the serving path for domain-specific legal language
 
@@ -172,7 +172,7 @@ Create a production env file from the committed example:
 cp .env.example .env.production
 ```
 
-Fill in the real values, especially `DB_PASSWORD`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `PUBLIC_APP_URL`, `PUBLIC_API_BASE_URL`, and `CORS_ALLOWED_ORIGINS`.
+Fill in the real values, especially `DB_PASSWORD`, `OPENROUTER_API_KEY`, `PUBLIC_APP_URL`, `PUBLIC_API_BASE_URL`, and `CORS_ALLOWED_ORIGINS`.
 
 Run the stack on the server:
 
@@ -193,8 +193,7 @@ Required GitHub Secrets:
 - `DO_HOST`
 - `DO_SSH_KEY`
 - `DB_PASSWORD`
-- `GOOGLE_API_KEY`
-- `GEMINI_API_KEY`
+- `OPENROUTER_API_KEY`
 - `PUBLIC_APP_URL`
 - `PUBLIC_API_BASE_URL`
 - `CORS_ALLOWED_ORIGINS`
@@ -207,12 +206,13 @@ Optional GitHub Secrets:
 - `DB_USER` defaults to `advocateai`
 - `CORS_ALLOW_ORIGIN_REGEX`
 - `LOG_LEVEL`
-- `GEMINI_MODEL`
-- `GEMINI_DEFAULT_TIMEOUT`
-- `GEMINI_ANALYSIS_TIMEOUT`
-- `GEMINI_BRIEF_TIMEOUT`
-- `GEMINI_CHAT_TIMEOUT`
-- `GEMINI_DOCUMENT_TIMEOUT`
+- `OPENROUTER_MODEL`
+- `OPENROUTER_VISION_MODEL`
+- `LLM_DEFAULT_TIMEOUT`
+- `LLM_ANALYSIS_TIMEOUT`
+- `LLM_BRIEF_TIMEOUT`
+- `LLM_CHAT_TIMEOUT`
+- `LLM_DOCUMENT_TIMEOUT`
 - `MLOPS_ENABLED`
 - `MLOPS_LOG_PROMPTS`
 - `MLFLOW_ENABLED`
@@ -222,6 +222,18 @@ Optional GitHub Secrets:
 - `WANDB_PROJECT`
 - `WANDB_ENTITY`
 - `WANDB_MODE`
+
+## Free-Tier Deployment
+
+The backend can also run entirely on free-tier managed services instead of a DigitalOcean droplet:
+
+- **Backend**: [Render](https://render.com) free web service — configured via [`render.yaml`](render.yaml) (Blueprint). Deploys automatically from `main`.
+- **Database**: [Neon](https://neon.tech) serverless Postgres — set `DATABASE_URL` on Render.
+- **Cache**: [Upstash](https://upstash.com) serverless Redis — set `REDIS_URL` on Render.
+- **LLM**: [OpenRouter](https://openrouter.ai) free-tier models — set `OPENROUTER_API_KEY` on Render.
+- **Frontend**: [Cloudflare Pages](https://pages.cloudflare.com), connected to this repo, building `test_app/` with Flutter.
+
+Render's free instance spins down after inactivity (cold start ~30-50s on the next request). Check backend health at `/health`, which reports database and LLM connectivity.
 
 ## Demo Login
 
