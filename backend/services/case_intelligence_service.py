@@ -3,7 +3,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from services.ai_service import GEMINI_API_KEY, LEGAL_DEFAULT_AREA, call_gemini, extract_json_object
+from services.ai_service import OPENROUTER_API_KEY, LEGAL_DEFAULT_AREA, call_llm, extract_json_object
 from services.cache_service import cache_service
 from services.config_service import get_ai_config
 from logging_config import get_logger
@@ -337,7 +337,7 @@ def build_case_intelligence(
     if cached:
         return cached
 
-    if not problem_text.strip() or not GEMINI_API_KEY:
+    if not problem_text.strip() or not OPENROUTER_API_KEY:
         cache_service.set(cache_key, fallback, ttl_seconds=1800)
         return fallback
 
@@ -389,7 +389,7 @@ Document names:
 
     try:
         parsed = extract_json_object(
-            call_gemini(
+            call_llm(
                 prompt,
                 timeout_seconds=get_ai_config().analysis_timeout_seconds,
                 telemetry={

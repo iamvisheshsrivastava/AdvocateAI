@@ -13,11 +13,13 @@ from pydantic import PrivateAttr
 
 from db.database import get_db_connection
 from services.ai_service import (
-    GEMINI_API_KEY,
+    OPENROUTER_API_KEY,
+    OPENROUTER_SITE_URL,
+    OPENROUTER_URL,
     LEGAL_DEFAULT_AREA,
     AI_CONFIG,
     build_case_brief,
-    call_gemini,
+    call_llm,
     embed_model,
     extract_json_object,
 )
@@ -383,7 +385,7 @@ def _extract_textual_analysis(text: str, file_name: str, page_count: int | None)
         return _fallback_analysis()
 
     prompt = _analysis_prompt_from_text(text)
-    response_text = call_gemini(
+    response_text = call_llm(
         prompt,
         timeout_seconds=AI_CONFIG.analysis_timeout_seconds,
         telemetry={
@@ -400,32 +402,37 @@ def _extract_textual_analysis(text: str, file_name: str, page_count: int | None)
 
 
 def _extract_image_analysis(file_bytes: bytes, mime_type: str, file_name: str) -> dict[str, Any]:
-    if not GEMINI_API_KEY:
+    if not OPENROUTER_API_KEY:
         return _fallback_analysis()
 
     started_at = time.perf_counter()
     ai_config = get_ai_config()
     encoded = base64.b64encode(file_bytes).decode("utf-8")
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{ai_config.gemini_model}:generateContent?key={GEMINI_API_KEY}"
-    )
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": OPENROUTER_SITE_URL,
+        "X-Title": "AdvocateAI",
+    }
     payload = {
-        "contents": [
+        "model": ai_config.llm_vision_model,
+        "messages": [
             {
-                "parts": [
-                    {"text": _analysis_prompt_for_image()},
-                    {"inlineData": {"mimeType": mime_type, "data": encoded}},
-                ]
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _analysis_prompt_for_image()},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}},
+                ],
             }
-        ]
+        ],
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=ai_config.document_timeout_seconds)
+        response = requests.post(
+            OPENROUTER_URL, headers=headers, json=payload, timeout=ai_config.document_timeout_seconds
+        )
         response.raise_for_status()
         result = response.json()
-        response_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        response_text = result["choices"][0]["message"]["content"]
         log_ai_event(
             "document_image_analysis",
             started_at=started_at,
@@ -433,7 +440,7 @@ def _extract_image_analysis(file_bytes: bytes, mime_type: str, file_name: str) -
             input_text=file_name,
             output_text=response_text,
             actor_key="document_image",
-            model_name=ai_config.gemini_model,
+            model_name=ai_config.llm_vision_model,
             metadata={"mime_type": mime_type, "file_name": file_name},
         )
     except Exception as exc:
@@ -444,7 +451,7 @@ def _extract_image_analysis(file_bytes: bytes, mime_type: str, file_name: str) -
             input_text=file_name,
             output_text="",
             actor_key="document_image",
-            model_name=ai_config.gemini_model,
+            model_name=ai_config.llm_vision_model,
             metadata={"mime_type": mime_type, "file_name": file_name},
             error=exc,
         )
@@ -770,7 +777,7 @@ def answer_document_question(
     )
 
     prompt = _qa_prompt_template().format(question=question, context=context, metadata=metadata)
-    response_text = call_gemini(
+    response_text = call_llm(
         prompt,
         timeout_seconds=AI_CONFIG.document_timeout_seconds,
         telemetry={

@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AIConfig:
-    gemini_model: str
+    llm_model: str
+    llm_vision_model: str
     default_timeout_seconds: int
     analysis_timeout_seconds: int
     brief_timeout_seconds: int
@@ -20,12 +21,13 @@ def get_ai_config() -> AIConfig:
             return default
 
     return AIConfig(
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
-        default_timeout_seconds=_int("GEMINI_DEFAULT_TIMEOUT", 20),
-        analysis_timeout_seconds=_int("GEMINI_ANALYSIS_TIMEOUT", 35),
-        brief_timeout_seconds=_int("GEMINI_BRIEF_TIMEOUT", 25),
-        chat_timeout_seconds=_int("GEMINI_CHAT_TIMEOUT", 25),
-        document_timeout_seconds=_int("GEMINI_DOCUMENT_TIMEOUT", 30),
+        llm_model=os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-20b:free"),
+        llm_vision_model=os.getenv("OPENROUTER_VISION_MODEL", "google/gemma-4-31b-it:free"),
+        default_timeout_seconds=_int("LLM_DEFAULT_TIMEOUT", 20),
+        analysis_timeout_seconds=_int("LLM_ANALYSIS_TIMEOUT", 35),
+        brief_timeout_seconds=_int("LLM_BRIEF_TIMEOUT", 25),
+        chat_timeout_seconds=_int("LLM_CHAT_TIMEOUT", 25),
+        document_timeout_seconds=_int("LLM_DOCUMENT_TIMEOUT", 30),
     )
 
 

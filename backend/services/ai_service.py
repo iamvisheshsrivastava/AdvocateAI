@@ -12,9 +12,9 @@ logger = get_logger(__name__)
 
 load_dotenv()
 
-# Try GOOGLE_API_KEY first (often the properly configured key for Gemini),
-# then fall back to GEMINI_API_KEY.
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_SITE_URL = os.getenv("PUBLIC_APP_URL", "https://advocateai.example.com")
 LEGAL_DEFAULT_AREA = "General Legal"
 AI_CONFIG = get_ai_config()
 
@@ -79,7 +79,7 @@ def extract_json_object(text: str) -> dict:
     return {}
 
 
-def call_gemini(
+def call_llm(
     prompt: str,
     timeout_seconds: int | None = None,
     *,
@@ -88,12 +88,12 @@ def call_gemini(
     telemetry = telemetry or {}
     started_at = time.perf_counter()
     resolved_timeout = timeout_seconds or AI_CONFIG.default_timeout_seconds
-    event_name = str(telemetry.get("event_name") or "gemini_call")
+    event_name = str(telemetry.get("event_name") or "llm_call")
     actor_key = str(telemetry.get("actor_key") or "anonymous")
-    model_name = str(telemetry.get("model_name") or AI_CONFIG.gemini_model)
+    model_name = str(telemetry.get("model_name") or AI_CONFIG.llm_model)
     cache_hit = bool(telemetry.get("cache_hit", False))
 
-    if not GEMINI_API_KEY:
+    if not OPENROUTER_API_KEY:
         log_ai_event(
             event_name,
             started_at=started_at,
@@ -103,20 +103,24 @@ def call_gemini(
             actor_key=actor_key,
             model_name=model_name,
             cache_hit=cache_hit,
-            metadata={**telemetry, "reason": "missing_gemini_api_key"},
+            metadata={**telemetry, "reason": "missing_openrouter_api_key"},
         )
         return ""
 
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model_name}:generateContent?key={GEMINI_API_KEY}"
-    )
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": OPENROUTER_SITE_URL,
+        "X-Title": "AdvocateAI",
+    }
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+    }
     try:
-        response = requests.post(url, json=payload, timeout=resolved_timeout)
+        response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=resolved_timeout)
         response.raise_for_status()
         result = response.json()
-        text = result["candidates"][0]["content"]["parts"][0]["text"]
+        text = result["choices"][0]["message"]["content"]
         log_ai_event(
             event_name,
             started_at=started_at,
@@ -142,7 +146,7 @@ def call_gemini(
             metadata=telemetry,
             error=exc,
         )
-        logger.exception("call_gemini failed")
+        logger.exception("call_llm failed")
         raise
 
 
@@ -243,7 +247,7 @@ def build_case_brief(
         legal_area=legal_area,
     )
 
-    if not problem_text.strip() or not GEMINI_API_KEY:
+    if not problem_text.strip() or not OPENROUTER_API_KEY:
         return fallback
 
     cache_key = f"ai_brief:{cache_service.make_hash(problem_text + json.dumps(document_names or []))}"
@@ -284,7 +288,7 @@ Document names:
 
     try:
         parsed = extract_json_object(
-            call_gemini(
+            call_llm(
                 prompt,
                 timeout_seconds=AI_CONFIG.brief_timeout_seconds,
                 telemetry={
@@ -308,7 +312,7 @@ Document names:
 def analyze_legal_problem(text: str, actor_key: str = "anonymous"):
     fallback = _fallback_analysis_result(text)
 
-    if not text.strip() or not GEMINI_API_KEY:
+    if not text.strip() or not OPENROUTER_API_KEY:
         return _with_case_brief(text, fallback, actor_key)
 
     cache_key = f"ai_analysis:{cache_service.make_hash(text)}"
@@ -351,7 +355,7 @@ User message:
 """
 
     try:
-        text_output = call_gemini(
+        text_output = call_llm(
             prompt,
             timeout_seconds=AI_CONFIG.analysis_timeout_seconds,
             telemetry={
@@ -374,7 +378,7 @@ User message:
 
 
 def generate_chat_response(user_message: str, context: str = "", actor_key: str = "anonymous") -> str:
-    if not GEMINI_API_KEY:
+    if not OPENROUTER_API_KEY:
         return "AI response is unavailable."
 
     cache_key = f"chat_response:{cache_service.make_hash(user_message + context)}"
@@ -403,7 +407,7 @@ Instructions:
 """
 
     try:
-        response = call_gemini(
+        response = call_llm(
             final_prompt,
             timeout_seconds=AI_CONFIG.chat_timeout_seconds,
             telemetry={

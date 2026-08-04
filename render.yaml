@@ -11,12 +11,12 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-      - key: GOOGLE_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+      - key: OPENROUTER_MODEL
+        value: openai/gpt-oss-20b:free
+      - key: OPENROUTER_VISION_MODEL
+        value: google/gemma-4-31b-it:free
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: LOG_LEVEL

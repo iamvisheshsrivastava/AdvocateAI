@@ -115,45 +115,47 @@ async def health():
 
 @app.get("/health")
 async def health_details():
-    from services.ai_service import GEMINI_API_KEY, AI_CONFIG
+    from services.ai_service import OPENROUTER_API_KEY, OPENROUTER_SITE_URL, OPENROUTER_URL, AI_CONFIG
     db_ok, db_error = _check_database_connection()
 
-    # Quick Gemini connectivity probe (cheap: tiny prompt, short timeout)
-    gemini_ok = False
-    gemini_error = None
-    if GEMINI_API_KEY:
+    # Quick LLM connectivity probe (cheap: tiny prompt, short timeout)
+    llm_ok = False
+    llm_error = None
+    if OPENROUTER_API_KEY:
         try:
             import requests as _req
-            model = AI_CONFIG.gemini_model
-            url = (
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model}:generateContent?key={GEMINI_API_KEY}"
-            )
+            model = AI_CONFIG.llm_model
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": OPENROUTER_SITE_URL,
+                "X-Title": "AdvocateAI",
+            }
             resp = _req.post(
-                url,
-                json={"contents": [{"parts": [{"text": "Hello"}]}]},
+                OPENROUTER_URL,
+                headers=headers,
+                json={"model": model, "messages": [{"role": "user", "content": "Hello"}]},
                 timeout=8,
             )
             if not resp.ok:
                 # Capture response body for diagnosis (API key sanitized below)
                 try:
                     body = resp.json()
-                    gemini_error = f"HTTP {resp.status_code}: {body}"
+                    llm_error = f"HTTP {resp.status_code}: {body}"
                 except Exception:
-                    gemini_error = f"HTTP {resp.status_code}: {resp.text[:300]}"
+                    llm_error = f"HTTP {resp.status_code}: {resp.text[:300]}"
             else:
                 resp.raise_for_status()
-                gemini_ok = True
+                llm_ok = True
         except Exception as exc:
-            if gemini_error is None:
-                gemini_error = str(exc)
+            if llm_error is None:
+                llm_error = str(exc)
         # Sanitize: strip the API key from error strings
-        if gemini_error and GEMINI_API_KEY:
-            gemini_error = gemini_error.replace(GEMINI_API_KEY, "***")
+        if llm_error and OPENROUTER_API_KEY:
+            llm_error = llm_error.replace(OPENROUTER_API_KEY, "***")
     else:
-        gemini_error = "GEMINI_API_KEY not configured"
+        llm_error = "OPENROUTER_API_KEY not configured"
 
-    overall_ok = db_ok and gemini_ok
+    overall_ok = db_ok and llm_ok
     payload = {
         "status": "ok" if overall_ok else "degraded",
         "service": "AdvocateAI",
@@ -161,6 +163,6 @@ async def health_details():
         "started_at": app_started_at.isoformat(),
         "uptime_seconds": max(0, int((datetime.now(timezone.utc) - app_started_at).total_seconds())),
         "database": {"ok": db_ok, "error": db_error},
-        "gemini": {"ok": gemini_ok, "model": AI_CONFIG.gemini_model, "error": gemini_error},
+        "llm": {"ok": llm_ok, "model": AI_CONFIG.llm_model, "error": llm_error},
     }
     return JSONResponse(status_code=200 if db_ok else 503, content=payload)

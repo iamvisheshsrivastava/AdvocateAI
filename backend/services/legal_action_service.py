@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from services.ai_service import GEMINI_API_KEY, call_gemini, extract_json_object
+from services.ai_service import OPENROUTER_API_KEY, call_llm, extract_json_object
 from services.cache_service import cache_service
 from services.config_service import get_ai_config
 from logging_config import get_logger
@@ -38,7 +38,7 @@ def _fallback_issue_type(problem_description: str) -> str:
 
 def _classify_issue_type(problem_description: str) -> str:
     fallback = _fallback_issue_type(problem_description)
-    if not GEMINI_API_KEY:
+    if not OPENROUTER_API_KEY:
         return fallback
 
     cache_key = f"legal_action_classify:{cache_service.make_hash(problem_description)}"
@@ -66,7 +66,7 @@ User problem:
 
     try:
         parsed = extract_json_object(
-            call_gemini(
+            call_llm(
                 prompt,
                 timeout_seconds=get_ai_config().brief_timeout_seconds,
                 telemetry={
