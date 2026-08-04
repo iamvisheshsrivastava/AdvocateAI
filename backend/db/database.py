@@ -8,6 +8,13 @@ LEGAL_DEFAULT_ROLE = "client"
 
 
 def get_db_connection():
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return psycopg2.connect(
+            database_url,
+            connect_timeout=int(os.getenv("DB_CONNECT_TIMEOUT", "3")),
+        )
+
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         database=os.getenv("DB_NAME", "postgres"),

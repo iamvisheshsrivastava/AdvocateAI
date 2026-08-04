@@ -25,6 +25,16 @@ class CacheService:
         if redis is None:
             return None
 
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            try:
+                client = redis.from_url(redis_url, decode_responses=True)
+                client.ping()
+                return client
+            except Exception as exc:
+                logger.debug("Redis not available at %s: %s", redis_url, exc)
+                return None
+
         host = os.getenv("REDIS_HOST", "localhost").strip()
         port = int(os.getenv("REDIS_PORT", "6379"))
 
