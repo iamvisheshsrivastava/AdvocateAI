@@ -2,6 +2,7 @@ import json
 import os
 import time
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 from services.cache_service import cache_service
@@ -17,6 +18,10 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_SITE_URL = os.getenv("PUBLIC_APP_URL", "https://advocateai.example.com")
 LEGAL_DEFAULT_AREA = "General Legal"
 AI_CONFIG = get_ai_config()
+
+# Runs the legal-analysis and case-brief LLM calls concurrently instead of
+# back-to-back, so a chat reply doesn't have to wait for both sequentially.
+_llm_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ai-service")
 
 
 class _LazyFastEmbedModel:
@@ -354,6 +359,10 @@ User message:
 {text}
 """
 
+    # Kick off the case brief in the background so it runs concurrently with
+    # the main analysis call below instead of waiting for it to finish first.
+    brief_future = _llm_executor.submit(build_case_brief, text, None, None, actor_key)
+
     try:
         text_output = call_llm(
             prompt,
@@ -365,16 +374,14 @@ User message:
             },
         )
         parsed = extract_json_object(text_output)
-        if not isinstance(parsed, dict):
-            return _with_case_brief(text, fallback, actor_key)
-
-        result = _parsed_analysis_result(parsed, fallback)
-        result = _with_case_brief(text, result, actor_key)
+        result = _parsed_analysis_result(parsed, fallback) if isinstance(parsed, dict) else fallback
+        result["case_brief"] = brief_future.result()
         cache_service.set(cache_key, result, ttl_seconds=900)
         return result
     except Exception as exc:
         logger.exception("analyze_legal_problem failed, returning fallback")
-        return _with_case_brief(text, fallback, actor_key)
+        fallback["case_brief"] = brief_future.result()
+        return fallback
 
 
 def generate_chat_response(user_message: str, context: str = "", actor_key: str = "anonymous") -> str:

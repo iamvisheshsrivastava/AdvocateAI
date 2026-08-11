@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter
@@ -26,7 +27,10 @@ async def chat(data: ChatRequest):
             "can_post_case": False,
         }
 
-    analysis = analyze_legal_problem(message, actor_key=actor_key)
+    # analyze_legal_problem/generate_chat_response make blocking HTTP calls;
+    # run them off the event loop so one slow chat request doesn't stall
+    # every other concurrent request on this server.
+    analysis = await asyncio.to_thread(analyze_legal_problem, message, actor_key=actor_key)
     case_intelligence = None
     legal_area = analysis.get("legal_area") if isinstance(analysis, dict) else None
     location = analysis.get("location") if isinstance(analysis, dict) else None
@@ -52,7 +56,7 @@ async def chat(data: ChatRequest):
                 f"({item['reviews']} reviews)\n"
             )
 
-    response_text = generate_chat_response(message, context, actor_key=actor_key)
+    response_text = await asyncio.to_thread(generate_chat_response, message, context, actor_key=actor_key)
 
     return {
         "response": response_text,
