@@ -39,7 +39,11 @@ class _LazyFastEmbedModel:
         if self._model is None:
             from fastembed import TextEmbedding  # ~100 MB vs 2.5 GB for torch
 
-            self._model = TextEmbedding(model_name=self._model_name)
+            # Pin thread count - onnxruntime otherwise sizes itself off the
+            # host's full core count rather than the tiny CPU share a
+            # free-tier instance actually gets, causing severe contention.
+            threads = int(os.getenv("EMBEDDING_THREADS", "2"))
+            self._model = TextEmbedding(model_name=self._model_name, threads=threads)
         return self._model
 
     def encode(self, text, **kwargs):  # noqa: ANN001
