@@ -9,5 +9,7 @@ class LoginRequest(BaseModel):
 class SignupRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     password: str = Field(..., min_length=1, max_length=256)
-    email: EmailStr
+    # Optional so older deployed frontend builds that don't send it yet keep
+    # working (fall back to the placeholder) - see routers/auth.py::signup.
+    email: EmailStr | None = None
     role: str = "client"

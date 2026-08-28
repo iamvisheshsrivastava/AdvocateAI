@@ -138,7 +138,7 @@ async def login(data: LoginRequest):
 async def signup(data: SignupRequest):
     username = data.username.strip()
     password = data.password.strip()
-    email = data.email.strip().lower()
+    email = (data.email.strip().lower() if data.email else "") or f"{username}@advocateai.local"
     role = _normalize_role(data.role)
 
     if not username or not password:
