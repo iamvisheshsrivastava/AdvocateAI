@@ -10,7 +10,7 @@ import 'role_home_page.dart';
 import 'theme.dart';
 
 Future<Map<String, dynamic>> signupUser(
-    String username, String password, String role) async {
+    String username, String password, String email, String role) async {
   try {
     final res = await http
         .post(
@@ -19,6 +19,7 @@ Future<Map<String, dynamic>> signupUser(
           body: jsonEncode({
             'username': username,
             'password': password,
+            'email': email,
             'role': role,
           }),
         )
@@ -44,6 +45,7 @@ class SignupPage extends StatefulWidget {
 class _SignupPageState extends State<SignupPage>
     with SingleTickerProviderStateMixin {
   final _usernameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   String _role = 'client';
@@ -71,18 +73,26 @@ class _SignupPageState extends State<SignupPage>
   void dispose() {
     _animCtrl.dispose();
     _usernameCtrl.dispose();
+    _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
   }
 
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
   Future<void> _handleSignup() async {
     final username = _usernameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
     final confirm = _confirmCtrl.text;
 
-    if (username.isEmpty || password.isEmpty || confirm.isEmpty) {
+    if (username.isEmpty || email.isEmpty || password.isEmpty || confirm.isEmpty) {
       setState(() => _error = 'Please fill in all fields.');
+      return;
+    }
+    if (!_emailPattern.hasMatch(email)) {
+      setState(() => _error = 'Please enter a valid email address.');
       return;
     }
     if (password.length < 6) {
@@ -100,7 +110,7 @@ class _SignupPageState extends State<SignupPage>
     });
 
     try {
-      final result = await signupUser(username, password, _role);
+      final result = await signupUser(username, password, email, _role);
       if (!mounted) return;
 
       if (result['success'] == true) {
@@ -137,6 +147,7 @@ class _SignupPageState extends State<SignupPage>
 
     final form = _SignupForm(
       usernameCtrl: _usernameCtrl,
+      emailCtrl: _emailCtrl,
       passwordCtrl: _passwordCtrl,
       confirmCtrl: _confirmCtrl,
       role: _role,
@@ -335,6 +346,7 @@ class _RolePickerCard extends StatelessWidget {
 
 class _SignupForm extends StatelessWidget {
   final TextEditingController usernameCtrl;
+  final TextEditingController emailCtrl;
   final TextEditingController passwordCtrl;
   final TextEditingController confirmCtrl;
   final String role;
@@ -350,6 +362,7 @@ class _SignupForm extends StatelessWidget {
 
   const _SignupForm({
     required this.usernameCtrl,
+    required this.emailCtrl,
     required this.passwordCtrl,
     required this.confirmCtrl,
     required this.role,
@@ -431,6 +444,20 @@ class _SignupForm extends StatelessWidget {
           decoration: InputDecoration(
             hintText: 'Choose a username',
             prefixIcon: const Icon(Icons.person_outline,
+                color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        _FieldLabel('Email'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          decoration: InputDecoration(
+            hintText: 'you@example.com',
+            prefixIcon: const Icon(Icons.email_outlined,
                 color: AppColors.textMuted),
           ),
         ),

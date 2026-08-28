@@ -56,16 +56,18 @@ def _find_local_user_by_login(username: str, password: str) -> dict | None:
     return None
 
 
-def _create_local_user(username: str, password: str, role: str) -> dict:
+def _create_local_user(username: str, password: str, email: str, role: str) -> dict:
     with _LOCAL_USERS_LOCK:
         users = _load_local_users()
         if any(str(u.get("name", "")).strip().lower() == username.strip().lower() for u in users):
             raise ValueError("Username already exists.")
+        if any(str(u.get("email", "")).strip().lower() == email.strip().lower() for u in users):
+            raise ValueError("An account with this email already exists.")
         next_id = max((int(u.get("id", 0)) for u in users), default=0) + 1
         user = {
             "id": next_id,
             "name": username,
-            "email": f"{username}@advocateai.local",
+            "email": email,
             "password_hash": hash_password(password),
             "role": role,
         }
@@ -136,6 +138,7 @@ async def login(data: LoginRequest):
 async def signup(data: SignupRequest):
     username = data.username.strip()
     password = data.password.strip()
+    email = data.email.strip().lower()
     role = _normalize_role(data.role)
 
     if not username or not password:
@@ -148,7 +151,9 @@ async def signup(data: SignupRequest):
         cur.execute("SELECT id FROM users WHERE LOWER(name) = LOWER(%s)", (username,))
         if cur.fetchone():
             return {"success": False, "message": "Username already exists."}
-        email = f"{username}@advocateai.local"
+        cur.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(%s)", (email,))
+        if cur.fetchone():
+            return {"success": False, "message": "An account with this email already exists."}
         cur.execute(
             "INSERT INTO users (name, email, password, password_hash, role) VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (username, email, None, hash_password(password), role),
@@ -159,7 +164,7 @@ async def signup(data: SignupRequest):
     except Exception as exc:
         logger.exception("DB signup failed, falling back to local users")
         try:
-            user = _create_local_user(username, password, role)
+            user = _create_local_user(username, password, email, role)
             return _token_response(int(user["id"]), user["name"], user["email"], user.get("role", "client"))
         except ValueError as local_exc:
             return {"success": False, "message": str(local_exc)}

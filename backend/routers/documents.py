@@ -13,6 +13,8 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["documents"])
 
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file
+
 
 @router.post(
     "/documents/analyze",
@@ -35,7 +37,14 @@ async def analyze_uploaded_document(
 
         payloads: list[tuple[str, str | None, bytes]] = []
         for upload in uploads:
-            file_bytes = await upload.read()
+            # Read one byte past the cap so we can detect an oversized file
+            # without buffering the whole thing into memory first.
+            file_bytes = await upload.read(MAX_FILE_SIZE_BYTES + 1)
+            if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"'{upload.filename or 'file'}' exceeds the 10 MB upload limit.",
+                )
             if not file_bytes:
                 continue
             payloads.append((upload.filename or "document", upload.content_type, file_bytes))

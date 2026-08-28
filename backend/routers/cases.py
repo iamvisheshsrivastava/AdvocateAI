@@ -2,7 +2,7 @@ import json
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from db.database import get_db_connection
 from logging_config import get_logger
 
@@ -310,7 +310,7 @@ async def get_cases_by_client(client_id: int):
 
 
 @router.get("/cases/open")
-async def get_open_cases():
+async def get_open_cases(limit: Annotated[int, Query(ge=1, le=100)] = 100, offset: Annotated[int, Query(ge=0)] = 0):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -320,7 +320,9 @@ async def get_open_cases():
         FROM cases c
         WHERE c.status = 'open' AND c.is_public = TRUE
         ORDER BY c.created_at DESC
-        """
+        LIMIT %s OFFSET %s
+        """,
+        (limit, offset),
     )
     rows = cur.fetchall()
     cur.close()
@@ -345,7 +347,10 @@ async def get_open_cases():
 
 
 @router.get("/cases/recommended/{lawyer_id}")
-async def get_recommended_cases_for_lawyer(lawyer_id: int):
+async def get_recommended_cases_for_lawyer(
+    lawyer_id: int,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
     if not _is_role(lawyer_id, "lawyer"):
         return []
 
@@ -368,6 +373,7 @@ async def get_recommended_cases_for_lawyer(lawyer_id: int):
         FROM cases
         WHERE status = 'open' AND is_public = TRUE
         ORDER BY created_at DESC
+        LIMIT 500
         """
     )
     cases = cur.fetchall()
@@ -375,7 +381,7 @@ async def get_recommended_cases_for_lawyer(lawyer_id: int):
     conn.close()
 
     if not profile:
-        return [_fallback_recommended_case(row) for row in cases[:10]]
+        return [_fallback_recommended_case(row) for row in cases[:limit]]
 
     lawyer_city = (profile[0] or "").strip().lower()
     practice_areas = [p.strip().lower() for p in (profile[1] or "").split(",") if p.strip()]
@@ -387,6 +393,7 @@ async def get_recommended_cases_for_lawyer(lawyer_id: int):
     ]
 
     scored.sort(key=lambda item: (item["match_score"], item["created_at"]), reverse=True)
+    scored = scored[:limit]
     return scored
 
 
@@ -431,7 +438,7 @@ async def get_case_detail(case_id: int):
     row = _fetch_case_row(case_id)
 
     if not row:
-        return {}
+        raise HTTPException(status_code=404, detail="Case not found.")
 
     payload = _case_row_to_dict(row)
     payload["accepted_lawyer_id"] = _get_accepted_lawyer_id(case_id)
@@ -443,7 +450,7 @@ async def get_case_detail(case_id: int):
 async def get_case_insights(case_id: int):
     row = _fetch_case_row(case_id)
     if not row:
-        return {}
+        raise HTTPException(status_code=404, detail="Case not found.")
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -802,6 +809,9 @@ async def get_case_events(case_id: int):
     cur.close()
     conn.close()
 
+    if not case_row:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
     items = [
         {
             "id": row[0],
@@ -812,13 +822,11 @@ async def get_case_events(case_id: int):
         for row in rows
     ]
 
-    timeline_summary = ""
-    if case_row:
-        bullet_points = [f"{item['event_date']}: {item['description']}" for item in items]
-        brief = (case_row[2] or {}) if len(case_row) > 2 else {}
-        timeline_summary = " ".join(bullet_points) or "No timeline events added yet."
-        if isinstance(brief, dict) and brief.get("timeline"):
-            timeline_summary = " ".join([str(entry) for entry in brief.get("timeline", [])])
+    bullet_points = [f"{item['event_date']}: {item['description']}" for item in items]
+    brief = (case_row[2] or {}) if len(case_row) > 2 else {}
+    timeline_summary = " ".join(bullet_points) or "No timeline events added yet."
+    if isinstance(brief, dict) and brief.get("timeline"):
+        timeline_summary = " ".join([str(entry) for entry in brief.get("timeline", [])])
 
     return {"items": items, "timeline_summary": timeline_summary}
 

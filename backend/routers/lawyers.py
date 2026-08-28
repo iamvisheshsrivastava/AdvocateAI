@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 from db.database import get_db_connection
 from models.lawyer import LawyerProfileRequest, WatchlistRequest
 from services.ml_matching_service import recommend_lawyers_for_case_ml
@@ -92,7 +94,7 @@ async def get_lawyer_profile(lawyer_id: int):
     conn.close()
 
     if not row:
-        return {}
+        raise HTTPException(status_code=404, detail="Lawyer profile not found.")
 
     return {
         "lawyer_id": row[0],
@@ -149,7 +151,11 @@ async def get_watchlist(user_id: int):
 
 
 @router.get("/professionals/{user_id}")
-async def get_professionals(user_id: int):
+async def get_professionals(
+    user_id: int,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -162,8 +168,9 @@ async def get_professionals(user_id: int):
             WHERE user_id = %s
         )
         ORDER BY rating DESC
+        LIMIT %s OFFSET %s
         """,
-        (user_id,),
+        (user_id, limit, offset),
     )
 
     rows = cur.fetchall()
