@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'config.dart';
@@ -21,12 +22,20 @@ class NotificationSocketClient {
   Timer? _reconnectTimer;
   bool _disposed = false;
 
-  void connect() {
+  void connect() async {
     if (_disposed || _channel != null) {
       return;
     }
 
-    final uri = Uri.parse('${ApiConfig.webSocketBaseUrl}/ws/notifications/$userId');
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token') ?? '';
+    if (token.isEmpty || _disposed || _channel != null) {
+      return;
+    }
+
+    final uri = Uri.parse(
+      '${ApiConfig.webSocketBaseUrl}/ws/notifications/$userId?token=$token',
+    );
     _channel = WebSocketChannel.connect(uri);
     _subscription = _channel!.stream.listen(
       (event) {

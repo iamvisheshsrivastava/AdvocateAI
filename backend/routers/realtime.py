@@ -1,5 +1,6 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from auth_utils import decode_token
 from db.database import get_db_connection
 from logging_config import get_logger
 from services.notification_service import create_notification
@@ -9,9 +10,65 @@ from services.realtime_service import case_hub, notification_hub, publish_case_m
 router = APIRouter(tags=["realtime"])
 logger = get_logger(__name__)
 
+_POLICY_VIOLATION = 1008
+
+
+def _extract_token(websocket: WebSocket) -> str | None:
+    token = websocket.query_params.get("token")
+    if token:
+        return token
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        return auth_header[7:]
+    return None
+
+
+async def _authenticate(websocket: WebSocket) -> dict | None:
+    """Validate the JWT on a WebSocket connection, returning its claims or None."""
+    token = _extract_token(websocket)
+    if not token:
+        return None
+    try:
+        return decode_token(token)
+    except HTTPException:
+        return None
+
+
+def _case_membership(case_id: int, user_id: int) -> bool:
+    """True if user_id is the client on case_id, or the accepted lawyer for it."""
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT client_id FROM cases WHERE case_id = %s", (case_id,))
+        row = cur.fetchone()
+        if row and row[0] == user_id:
+            return True
+        cur.execute(
+            """
+            SELECT 1 FROM case_applications
+            WHERE case_id = %s AND lawyer_id = %s AND status = 'accepted'
+            """,
+            (case_id, user_id),
+        )
+        return cur.fetchone() is not None
+    except Exception:
+        logger.exception("Failed to verify case membership case_id=%s user_id=%s", case_id, user_id)
+        return False
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
 
 @router.websocket("/ws/notifications/{user_id}")
 async def notifications_socket(websocket: WebSocket, user_id: int):
+    claims = await _authenticate(websocket)
+    if claims is None or str(claims.get("sub")) != str(user_id):
+        await websocket.close(code=_POLICY_VIOLATION)
+        return
+
     try:
         await notification_hub.connect(user_id, websocket)
     except Exception:
@@ -31,6 +88,14 @@ async def notifications_socket(websocket: WebSocket, user_id: int):
 
 @router.websocket("/ws/case/{case_id}/{user_id}")
 async def case_socket(websocket: WebSocket, case_id: int, user_id: int):
+    claims = await _authenticate(websocket)
+    if claims is None or str(claims.get("sub")) != str(user_id):
+        await websocket.close(code=_POLICY_VIOLATION)
+        return
+    if not _case_membership(case_id, user_id):
+        await websocket.close(code=_POLICY_VIOLATION)
+        return
+
     try:
         await case_hub.connect(case_id, websocket)
     except Exception:

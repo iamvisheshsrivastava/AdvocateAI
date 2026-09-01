@@ -21,3 +21,7 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: INFO
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET_KEY
+        sync: false

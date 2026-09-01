@@ -1,7 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
+from auth_utils import get_current_user_optional
 from models.document import DocumentQuestionRequest
 from services.case_intelligence_service import build_case_intelligence
 from services.document_analysis_service import analyze_document, analyze_documents
@@ -16,6 +17,17 @@ router = APIRouter(tags=["documents"])
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file
 
 
+def _rate_limit_actor_key(request: Request, current_user: dict | None) -> str:
+    # Rate limiting must be keyed on something the caller can't spoof.
+    # A verified JWT identity is preferred; until auth is enforced on these
+    # routes, fall back to the client IP rather than any client-supplied
+    # user_id, which can be rotated per-request to bypass the limit.
+    if current_user is not None and current_user.get("sub") is not None:
+        return f"user:{current_user['sub']}"
+    client_host = request.client.host if request.client else "unknown"
+    return f"ip:{client_host}"
+
+
 @router.post(
     "/documents/analyze",
     responses={
@@ -24,9 +36,11 @@ MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file
     },
 )
 async def analyze_uploaded_document(
+    request: Request,
     file: Annotated[UploadFile | None, File()] = None,
     files: Annotated[list[UploadFile] | None, File()] = None,
     user_id: Annotated[int | None, Form()] = None,
+    current_user: dict | None = Depends(get_current_user_optional),
 ):
     try:
         uploads = [item for item in (files or []) if item is not None]
@@ -52,7 +66,7 @@ async def analyze_uploaded_document(
         if not payloads:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-        actor_key = f"user:{user_id}" if user_id is not None else "anonymous"
+        actor_key = _rate_limit_actor_key(request, current_user)
         analysis = (
             analyze_documents(payloads, actor_key=actor_key, user_id=user_id)
             if len(payloads) > 1
@@ -119,12 +133,16 @@ async def analyze_uploaded_document(
         500: {"description": "Document QA failed."},
     },
 )
-async def ask_document_question(request: DocumentQuestionRequest):
+async def ask_document_question(
+    request: DocumentQuestionRequest,
+    http_request: Request,
+    current_user: dict | None = Depends(get_current_user_optional),
+):
     try:
         answer = answer_document_question(
             batch_id=request.document_batch_id,
             question=request.question,
-            actor_key=f"user:{request.user_id}" if request.user_id is not None else "anonymous",
+            actor_key=_rate_limit_actor_key(http_request, current_user),
         )
         return answer
     except ValueError as exc:

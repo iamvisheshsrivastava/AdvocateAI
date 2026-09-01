@@ -161,7 +161,7 @@ async def signup(data: SignupRequest):
         user_id = cur.fetchone()[0]
         conn.commit()
         return _token_response(user_id, username, email, role)
-    except Exception as exc:
+    except Exception:
         logger.exception("DB signup failed, falling back to local users")
         try:
             user = _create_local_user(username, password, email, role)
@@ -170,7 +170,7 @@ async def signup(data: SignupRequest):
             return {"success": False, "message": str(local_exc)}
         except Exception:
             logger.exception("Local user creation also failed")
-            return {"success": False, "message": f"Unable to create account: {exc}"}
+            return {"success": False, "message": "Unable to create account. Please try again later."}
     finally:
         if cur:
             cur.close()

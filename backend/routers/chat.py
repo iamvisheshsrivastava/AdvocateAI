@@ -1,8 +1,10 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+
+from auth_utils import get_current_user_optional
 from services.ai_service import analyze_legal_problem, generate_chat_response
 from services.matching_service import rank_lawyers
 
@@ -15,10 +17,25 @@ class ChatRequest(BaseModel):
     user_id: int | None = None
 
 
+def _rate_limit_actor_key(request: Request, current_user: dict | None) -> str:
+    # Rate limiting must be keyed on something the caller can't spoof.
+    # A verified JWT identity is preferred; until auth is enforced on this
+    # route, fall back to the client IP rather than any client-supplied
+    # user_id, which can be rotated per-request to bypass the limit.
+    if current_user is not None and current_user.get("sub") is not None:
+        return f"user:{current_user['sub']}"
+    client_host = request.client.host if request.client else "unknown"
+    return f"ip:{client_host}"
+
+
 @router.post("/chat")
-async def chat(data: ChatRequest):
+async def chat(
+    data: ChatRequest,
+    request: Request,
+    current_user: dict | None = Depends(get_current_user_optional),
+):
     message = data.message.strip()
-    actor_key = f"user:{data.user_id}" if data.user_id is not None else "anonymous"
+    actor_key = _rate_limit_actor_key(request, current_user)
     if not message:
         return {
             "response": "Please describe your legal problem.",
