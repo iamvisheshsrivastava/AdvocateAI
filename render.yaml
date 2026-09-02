@@ -14,9 +14,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: nvidia/nemotron-nano-9b-v2:free
+        value: z-ai/glm-4.6
       - key: OPENROUTER_VISION_MODEL
-        value: google/gemma-4-31b-it:free
+        value: z-ai/glm-4.6v
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: LOG_LEVEL
