@@ -75,8 +75,10 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadCaseIntelligence() async {
+    final headers = await ApiConfig.authHeaders();
     final response = await http.get(
       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/insights'),
+      headers: headers,
     );
     if (!mounted || response.statusCode != 200) return;
     final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -86,8 +88,10 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadCaseDetail() async {
+    final headers = await ApiConfig.authHeaders();
     final response = await http.get(
       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}'),
+      headers: headers,
     );
     if (!mounted || response.statusCode != 200) return;
     final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -97,10 +101,10 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadMessages() async {
+    final headers = await ApiConfig.authHeaders();
     final response = await http.get(
-      Uri.parse(
-        '${ApiConfig.baseUrl}/messages/${widget.caseId}?user_id=${widget.currentUserId}',
-      ),
+      Uri.parse('${ApiConfig.baseUrl}/messages/${widget.caseId}'),
+      headers: headers,
     );
     if (!mounted || response.statusCode != 200) return;
     final items = jsonDecode(response.body) as List<dynamic>;
@@ -118,8 +122,10 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadTimeline() async {
+    final headers = await ApiConfig.authHeaders();
     final response = await http.get(
       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/events'),
+      headers: headers,
     );
     if (!mounted || response.statusCode != 200) return;
     final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -130,8 +136,10 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadApplications() async {
+    final headers = await ApiConfig.authHeaders();
     final response = await http.get(
       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/applications'),
+      headers: headers,
     );
     if (!mounted || response.statusCode != 200) return;
     final items = jsonDecode(response.body) as List<dynamic>;
@@ -141,9 +149,11 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadNotificationsTargets() async {
+    final headers = await ApiConfig.authHeaders();
     if (caseData == null) {
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}'),
+        headers: headers,
       );
       if (response.statusCode == 200) {
         caseData = jsonDecode(response.body) as Map<String, dynamic>;
@@ -164,6 +174,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     if (isClient) {
       final applicationsResponse = await http.get(
         Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/applications'),
+        headers: headers,
       );
       if (applicationsResponse.statusCode == 200) {
         final items = jsonDecode(applicationsResponse.body) as List<dynamic>;
@@ -178,6 +189,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
       if (resolvedContacts.isEmpty) {
         final recommendationsResponse = await http.get(
           Uri.parse('${ApiConfig.baseUrl}/lawyers/recommended/${widget.caseId}'),
+          headers: headers,
         );
         if (recommendationsResponse.statusCode == 200) {
           final items = jsonDecode(recommendationsResponse.body) as List<dynamic>;
@@ -217,7 +229,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     setState(() => isSending = true);
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/messages/send'),
-      headers: {'Content-Type': 'application/json'},
+      headers: await ApiConfig.authHeaders(),
       body: jsonEncode({
         'case_id': widget.caseId,
         'sender_id': widget.currentUserId,
@@ -298,7 +310,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
                     setState(() => isAddingEvent = true);
                     final response = await http.post(
                       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/events'),
-                      headers: {'Content-Type': 'application/json'},
+                      headers: await ApiConfig.authHeaders(),
                       body: jsonEncode({
                         'description': descriptionController.text.trim(),
                         'event_date': '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
@@ -325,7 +337,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     setState(() => pendingApplicationUpdates.add(applicationId));
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/applications/$applicationId/decision'),
-      headers: {'Content-Type': 'application/json'},
+      headers: await ApiConfig.authHeaders(),
       body: jsonEncode({
         'client_id': widget.currentUserId,
         'decision': decision,
@@ -389,7 +401,7 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
     setState(() => isClosingCase = true);
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/cases/${widget.caseId}/close'),
-      headers: {'Content-Type': 'application/json'},
+      headers: await ApiConfig.authHeaders(),
       body: jsonEncode({
         'client_id': widget.currentUserId,
         'reason': 'Client marked this case as closed from workspace.',

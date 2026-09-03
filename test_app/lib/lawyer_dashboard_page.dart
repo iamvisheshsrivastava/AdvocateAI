@@ -258,7 +258,7 @@ class _LawyerProfileCardState extends State<LawyerProfileCard> {
 
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/lawyer/profile'),
-      headers: {'Content-Type': 'application/json'},
+      headers: await ApiConfig.authHeaders(),
       body: jsonEncode({
         'lawyer_id': widget.lawyerId,
         'name': nameController.text.trim(),
@@ -455,7 +455,13 @@ class _CaseFeedCardState extends State<_CaseFeedCard> {
   }
 
   Future<void> _loadCases() async {
-    final response = await http.get(Uri.parse(widget.endpoint));
+    // `endpoint` is either the public /cases/open feed or the
+    // authenticated /cases/recommended/{lawyerId} feed; sending the
+    // Bearer token either way is harmless (the public route ignores it).
+    final response = await http.get(
+      Uri.parse(widget.endpoint),
+      headers: await ApiConfig.authHeaders(),
+    );
     if (!mounted) return;
     if (response.statusCode == 200) {
       setState(() {
@@ -490,7 +496,7 @@ class _CaseFeedCardState extends State<_CaseFeedCard> {
             onPressed: () async {
               final response = await http.post(
                 Uri.parse('${ApiConfig.baseUrl}/cases/apply'),
-                headers: {'Content-Type': 'application/json'},
+                headers: await ApiConfig.authHeaders(),
                 body: jsonEncode({
                   'case_id': caseId,
                   'lawyer_id': widget.lawyerId,
@@ -643,6 +649,7 @@ class _LawyerApplicationsCardState extends State<LawyerApplicationsCard> {
   Future<void> _loadApplications() async {
     final response = await http.get(
       Uri.parse('${ApiConfig.baseUrl}/cases/applications/${widget.lawyerId}'),
+      headers: await ApiConfig.authHeaders(),
     );
 
     if (!mounted) return;

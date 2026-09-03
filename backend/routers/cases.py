@@ -2,7 +2,8 @@ import json
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from auth_utils import get_current_user
 from db.database import get_db_connection
 from logging_config import get_logger
 
@@ -33,6 +34,35 @@ def _is_role(user_id: int, required_role: str) -> bool:
     if not row:
         return False
     return (row[0] or "client").strip().lower() == required_role
+
+
+def _require_self(current_user: dict, user_id: int, message: str) -> None:
+    """Raise 403 unless the authenticated caller's JWT subject matches user_id."""
+    if str(current_user.get("sub")) != str(user_id):
+        raise HTTPException(status_code=403, detail=message)
+
+
+def _is_case_participant(case_id: int, user_id: int, client_id: int) -> bool:
+    """True if user_id is the case's client, or a lawyer who applied to it."""
+    if user_id == client_id:
+        return True
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM case_applications WHERE case_id = %s AND lawyer_id = %s",
+        (case_id, user_id),
+    )
+    exists = cur.fetchone() is not None
+    cur.close()
+    conn.close()
+    return exists
+
+
+def _user_can_view_case(case_id: int, user_id: int, client_id: int, is_public: bool) -> bool:
+    """True if user_id may view case details: the case is public, or they're a participant."""
+    if is_public:
+        return True
+    return _is_case_participant(case_id, user_id, client_id)
 
 
 def _normalize_case_status(raw_status: str | None) -> str:
@@ -236,7 +266,8 @@ def _score_recommended_case(
 
 
 @router.post("/cases/create")
-async def create_case(data: CaseCreateRequest):
+async def create_case(data: CaseCreateRequest, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, data.client_id, "You can only create cases for your own account.")
     if not _is_role(data.client_id, "client"):
         return {"success": False, "message": "Only client users can create cases."}
 
@@ -284,7 +315,11 @@ async def create_case(data: CaseCreateRequest):
 
 
 @router.get("/cases/my")
-async def get_my_cases(client_id: Annotated[int, Query()]):
+async def get_my_cases(
+    client_id: Annotated[int, Query()],
+    current_user: dict = Depends(get_current_user),
+):
+    _require_self(current_user, client_id, "You can only view your own cases.")
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -305,8 +340,8 @@ async def get_my_cases(client_id: Annotated[int, Query()]):
 
 
 @router.get("/cases/client/{client_id}")
-async def get_cases_by_client(client_id: int):
-    return await get_my_cases(client_id=client_id)
+async def get_cases_by_client(client_id: int, current_user: dict = Depends(get_current_user)):
+    return await get_my_cases(client_id=client_id, current_user=current_user)
 
 
 @router.get("/cases/open")
@@ -350,7 +385,9 @@ async def get_open_cases(limit: Annotated[int, Query(ge=1, le=100)] = 100, offse
 async def get_recommended_cases_for_lawyer(
     lawyer_id: int,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    current_user: dict = Depends(get_current_user),
 ):
+    _require_self(current_user, lawyer_id, "You can only view your own recommendations.")
     if not _is_role(lawyer_id, "lawyer"):
         return []
 
@@ -398,7 +435,8 @@ async def get_recommended_cases_for_lawyer(
 
 
 @router.get("/cases/applications/{lawyer_id}")
-async def get_lawyer_applications(lawyer_id: int):
+async def get_lawyer_applications(lawyer_id: int, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, lawyer_id, "You can only view your own applications.")
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -434,23 +472,32 @@ async def get_lawyer_applications(lawyer_id: int):
 
 
 @router.get("/cases/{case_id}")
-async def get_case_detail(case_id: int):
+async def get_case_detail(case_id: int, current_user: dict = Depends(get_current_user)):
     row = _fetch_case_row(case_id)
 
     if not row:
         raise HTTPException(status_code=404, detail="Case not found.")
 
     payload = _case_row_to_dict(row)
+    user_id = int(current_user.get("sub"))
+    if not _user_can_view_case(case_id, user_id, payload["client_id"], payload["is_public"]):
+        raise HTTPException(status_code=403, detail="You do not have access to this case.")
+
     payload["accepted_lawyer_id"] = _get_accepted_lawyer_id(case_id)
     payload["case_intelligence"] = _build_case_intelligence_from_row(row)
     return payload
 
 
 @router.get("/cases/{case_id}/insights")
-async def get_case_insights(case_id: int):
+async def get_case_insights(case_id: int, current_user: dict = Depends(get_current_user)):
     row = _fetch_case_row(case_id)
     if not row:
         raise HTTPException(status_code=404, detail="Case not found.")
+
+    payload = _case_row_to_dict(row)
+    user_id = int(current_user.get("sub"))
+    if not _user_can_view_case(case_id, user_id, payload["client_id"], payload["is_public"]):
+        raise HTTPException(status_code=403, detail="You do not have access to this case.")
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -481,7 +528,8 @@ async def get_case_insights(case_id: int):
 
 
 @router.post("/cases/apply")
-async def apply_to_case(data: CaseApplyRequest):
+async def apply_to_case(data: CaseApplyRequest, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, data.lawyer_id, "You can only apply to cases as yourself.")
     if not _is_role(data.lawyer_id, "lawyer"):
         return {"success": False, "message": "Only lawyer users can apply to cases."}
 
@@ -530,7 +578,9 @@ async def decide_case_application(
     case_id: int,
     application_id: int,
     data: CaseApplicationDecisionRequest,
+    current_user: dict = Depends(get_current_user),
 ):
+    _require_self(current_user, data.client_id, "You can only review applications as yourself.")
     decision = data.decision.strip().lower()
     if decision not in ("accepted", "rejected"):
         return {
@@ -667,7 +717,8 @@ async def decide_case_application(
 
 
 @router.post("/cases/{case_id}/close")
-async def close_case(case_id: int, data: CaseCloseRequest):
+async def close_case(case_id: int, data: CaseCloseRequest, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, data.client_id, "You can only close cases as yourself.")
     if not _is_role(data.client_id, "client"):
         return {"success": False, "message": "Only client users can close cases."}
 
@@ -748,7 +799,13 @@ async def close_case(case_id: int, data: CaseCloseRequest):
 
 
 @router.get("/cases/{case_id}/applications")
-async def get_case_applications(case_id: int):
+async def get_case_applications(case_id: int, current_user: dict = Depends(get_current_user)):
+    row = _fetch_case_row(case_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    client_id = row[1]
+    _require_self(current_user, client_id, "Only the case owner can view its applications.")
+
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -783,7 +840,16 @@ async def get_case_applications(case_id: int):
 
 
 @router.get("/cases/{case_id}/events")
-async def get_case_events(case_id: int):
+async def get_case_events(case_id: int, current_user: dict = Depends(get_current_user)):
+    row = _fetch_case_row(case_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    payload = _case_row_to_dict(row)
+    user_id = int(current_user.get("sub"))
+    if not _user_can_view_case(case_id, user_id, payload["client_id"], payload["is_public"]):
+        raise HTTPException(status_code=403, detail="You do not have access to this case.")
+
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -796,21 +862,8 @@ async def get_case_events(case_id: int):
         (case_id,),
     )
     rows = cur.fetchall()
-
-    cur.execute(
-        """
-        SELECT title, description, case_brief
-        FROM cases
-        WHERE case_id = %s
-        """,
-        (case_id,),
-    )
-    case_row = cur.fetchone()
     cur.close()
     conn.close()
-
-    if not case_row:
-        raise HTTPException(status_code=404, detail="Case not found.")
 
     items = [
         {
@@ -823,7 +876,7 @@ async def get_case_events(case_id: int):
     ]
 
     bullet_points = [f"{item['event_date']}: {item['description']}" for item in items]
-    brief = (case_row[2] or {}) if len(case_row) > 2 else {}
+    brief = payload.get("case_brief") or {}
     timeline_summary = " ".join(bullet_points) or "No timeline events added yet."
     if isinstance(brief, dict) and brief.get("timeline"):
         timeline_summary = " ".join([str(entry) for entry in brief.get("timeline", [])])
@@ -832,7 +885,20 @@ async def get_case_events(case_id: int):
 
 
 @router.post("/cases/{case_id}/events")
-async def add_case_event(case_id: int, data: CaseEventRequest):
+async def add_case_event(case_id: int, data: CaseEventRequest, current_user: dict = Depends(get_current_user)):
+    row = _fetch_case_row(case_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    client_id = row[1]
+    user_id = int(current_user.get("sub"))
+    accepted_lawyer_id = _get_accepted_lawyer_id(case_id)
+    if user_id != client_id and user_id != accepted_lawyer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the case owner or the accepted lawyer can add timeline events.",
+        )
+
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(

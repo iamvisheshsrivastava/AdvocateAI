@@ -1,7 +1,6 @@
-from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException
 
-from fastapi import APIRouter, Query
-
+from auth_utils import get_current_user
 from db.database import get_db_connection
 from models.message import MessageSendRequest
 from services.matching_service import refresh_lawyer_responsiveness
@@ -14,7 +13,10 @@ router = APIRouter(tags=["messages"])
 
 
 @router.post("/messages/send")
-async def send_message(data: MessageSendRequest):
+async def send_message(data: MessageSendRequest, current_user: dict = Depends(get_current_user)):
+    if str(current_user.get("sub")) != str(data.sender_id):
+        raise HTTPException(status_code=403, detail="You can only send messages as yourself.")
+
     content = data.content.strip()
     if not content:
         return {"success": False, "message": "Message content is required."}
@@ -36,6 +38,21 @@ async def send_message(data: MessageSendRequest):
         cur.close()
         conn.close()
         return {"success": False, "message": "Case not found."}
+
+    # Only the case's client, or a lawyer who has applied to it, may send or
+    # receive messages on the case -- prevents using this endpoint to message
+    # an arbitrary, unrelated user_id.
+    client_id = case_row[0]
+    cur.execute(
+        "SELECT lawyer_id FROM case_applications WHERE case_id = %s",
+        (data.case_id,),
+    )
+    applicant_ids = {row[0] for row in cur.fetchall()}
+    participants = {client_id} | applicant_ids
+    if data.sender_id not in participants or data.receiver_id not in participants:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=403, detail="You are not a participant in this case.")
 
     cur.execute(
         """
@@ -85,9 +102,30 @@ async def send_message(data: MessageSendRequest):
 
 
 @router.get("/messages/{case_id}")
-async def get_messages(case_id: int, user_id: Annotated[int | None, Query()] = None):
+async def get_messages(case_id: int, current_user: dict = Depends(get_current_user)):
+    user_id = int(current_user.get("sub"))
+
     conn = get_db_connection()
     cur = conn.cursor()
+    cur.execute("SELECT client_id FROM cases WHERE case_id = %s", (case_id,))
+    case_row = cur.fetchone()
+    if not case_row:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    client_id = case_row[0]
+    if user_id != client_id:
+        cur.execute(
+            "SELECT 1 FROM case_applications WHERE case_id = %s AND lawyer_id = %s",
+            (case_id, user_id),
+        )
+        is_applicant = cur.fetchone() is not None
+        if not is_applicant:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=403, detail="You do not have access to this case's messages.")
+
     cur.execute(
         """
         SELECT m.message_id, m.case_id, m.sender_id, sender.name, m.receiver_id, receiver.name,
@@ -114,7 +152,7 @@ async def get_messages(case_id: int, user_id: Annotated[int | None, Query()] = N
             "receiver_name": row[5],
             "content": row[6],
             "created_at": str(row[7]),
-            "is_mine": user_id == row[2] if user_id is not None else False,
+            "is_mine": user_id == row[2],
         }
         for row in rows
     ]

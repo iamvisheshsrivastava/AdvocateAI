@@ -106,7 +106,7 @@ class _CreateCasePageState extends State<CreateCasePage> {
 
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/cases/create'),
-      headers: {'Content-Type': 'application/json'},
+      headers: await ApiConfig.authHeaders(),
       body: jsonEncode({
         'client_id': userId,
         'title': title,
@@ -349,7 +349,10 @@ class _MyCasesPageState extends State<MyCasesPage> {
     final userId = prefs.getInt('user_id');
     if (userId == null) return;
 
-    final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/cases/client/$userId'));
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/cases/client/$userId'),
+      headers: await ApiConfig.authHeaders(),
+    );
     if (!mounted) return;
 
     if (response.statusCode == 200) {
@@ -479,7 +482,10 @@ class _RecommendedLawyersPageState extends State<RecommendedLawyersPage> {
     final userId = prefs.getInt('user_id');
     if (userId == null) return;
 
-    final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/professionals/$userId'));
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/professionals/$userId'),
+      headers: await ApiConfig.authHeaders(),
+    );
 
     if (!mounted) return;
 

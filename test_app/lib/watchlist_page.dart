@@ -33,9 +33,10 @@ class _WatchListPageState extends State<WatchListPage> {
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
+      final headers = await ApiConfig.authHeaders();
       final results = await Future.wait([
-        http.get(Uri.parse('${ApiConfig.baseUrl}/watchlist/${widget.userId}')),
-        http.get(Uri.parse('${ApiConfig.baseUrl}/professionals/${widget.userId}')),
+        http.get(Uri.parse('${ApiConfig.baseUrl}/watchlist/${widget.userId}'), headers: headers),
+        http.get(Uri.parse('${ApiConfig.baseUrl}/professionals/${widget.userId}'), headers: headers),
       ]);
 
       if (!mounted) return;
@@ -59,7 +60,7 @@ class _WatchListPageState extends State<WatchListPage> {
     try {
       await http.post(
         Uri.parse('${ApiConfig.baseUrl}/watchlist/add'),
-        headers: {'Content-Type': 'application/json'},
+        headers: await ApiConfig.authHeaders(),
         body: jsonEncode({
           'user_id': widget.userId,
           'professional_ids': selected.toList(),

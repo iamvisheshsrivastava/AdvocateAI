@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from auth_utils import get_current_user
 from db.database import get_db_connection
 from models.lawyer import LawyerProfileRequest, WatchlistRequest
 from services.ml_matching_service import recommend_lawyers_for_case_ml
@@ -12,6 +13,12 @@ router = APIRouter(tags=["lawyers"])
 USER_ROLE_QUERY = "SELECT COALESCE(role, 'client') FROM users WHERE id = %s"
 
 
+def _require_self(current_user: dict, user_id: int, message: str) -> None:
+    """Raise 403 unless the authenticated caller's JWT subject matches user_id."""
+    if str(current_user.get("sub")) != str(user_id):
+        raise HTTPException(status_code=403, detail=message)
+
+
 def _safe_list_to_text(value: list[str] | str) -> str:
     if isinstance(value, list):
         return ", ".join([v.strip() for v in value if v and v.strip()])
@@ -19,7 +26,8 @@ def _safe_list_to_text(value: list[str] | str) -> str:
 
 
 @router.post("/lawyer/profile")
-async def upsert_lawyer_profile(data: LawyerProfileRequest):
+async def upsert_lawyer_profile(data: LawyerProfileRequest, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, data.lawyer_id, "You can only edit your own lawyer profile.")
     conn = get_db_connection()
     cur = conn.cursor()
 
@@ -114,13 +122,24 @@ async def get_lawyer_profile(lawyer_id: int):
 
 
 @router.get("/lawyers/recommended/{case_id}")
-async def get_recommended_lawyers(case_id: int):
+async def get_recommended_lawyers(case_id: int, current_user: dict = Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT client_id FROM cases WHERE case_id = %s", (case_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    _require_self(current_user, row[0], "Only the case owner can view lawyer recommendations for this case.")
+
     response = recommend_lawyers_for_case_ml(case_id, limit=5)
     return response.get("items", [])
 
 
 @router.get("/watchlist/{user_id}")
-async def get_watchlist(user_id: int):
+async def get_watchlist(user_id: int, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, user_id, "You can only view your own watchlist.")
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -155,7 +174,9 @@ async def get_professionals(
     user_id: int,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    current_user: dict = Depends(get_current_user),
 ):
+    _require_self(current_user, user_id, "You can only browse professionals as yourself.")
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -190,7 +211,8 @@ async def get_professionals(
 
 
 @router.post("/watchlist/add")
-async def add_to_watchlist(data: WatchlistRequest):
+async def add_to_watchlist(data: WatchlistRequest, current_user: dict = Depends(get_current_user)):
+    _require_self(current_user, data.user_id, "You can only modify your own watchlist.")
     conn = get_db_connection()
     cur = conn.cursor()
 
