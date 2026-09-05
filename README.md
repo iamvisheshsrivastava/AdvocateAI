@@ -11,38 +11,32 @@ The current build is focused on making the first steps of legal help easier: und
 - document upload and analysis for PDFs and images
 - document batch storage with follow-up question answering over uploaded files
 - structured extraction for parties, deadlines, amounts, obligations, and risks
-- LangChain-backed prompting with LlamaIndex retrieval for document QA
+- document Q&A retrieval so follow-up questions can be answered against previously uploaded files
 - legal action guidance for supported common situations
 - lawyer recommendations based on the case details
 - case creation, case tracking, and case workspace collaboration
 - client-lawyer messaging inside the case workspace
 - notifications for messages, applications, and recommendations
 - separate client and lawyer experiences
-- optional MLOps instrumentation for AI runs via Hydra-backed config, MLflow, and Weights & Biases
-- optional one-time LoRA/QLoRA fine-tuning script for running adapter training on a GPU server
 
 ## Tech Stack
 
 **Backend & APIs:** FastAPI, Python, Uvicorn  
-**RAG & Retrieval:** LangChain, LlamaIndex, semantic chunking, retrieval-augmented generation  
-**Vector Storage:** FAISS (local similarity search), Qdrant (production vector retrieval), PostgreSQL with pgvector (hybrid relational + vector storage)  
-**LLM Provider:** OpenRouter (free-tier models — `openai/gpt-oss-20b:free` for text, `google/gemma-4-31b-it:free` for document image analysis)  
-**Fine-Tuning:** Optional LoRA/QLoRA adapter training via `backend/train_lora.py`  
-**MLOps:** MLflow experiment tracking, Weights & Biases, Hydra config management  
+**Embeddings & Matching:** [fastembed](https://github.com/qdrant/fastembed) (ONNX build of `all-MiniLM-L6-v2`, ~100 MB instead of pulling in the full PyTorch/sentence-transformers stack) — vectors are stored as JSON arrays in PostgreSQL and compared with a plain NumPy dot product. No dedicated vector database; the case/lawyer volume here doesn't justify running Qdrant or FAISS yet, and this keeps the deploy footprint small enough to fit a free-tier instance  
+**Document parsing:** `pdfplumber` and `pymupdf` for PDF text/page extraction, sent through the LLM for structured extraction  
+**LLM Provider:** OpenRouter — currently `z-ai/glm-4.6` for text and `z-ai/glm-4.6v` for document image analysis (both free-tier; see [Free-Tier Deployment](#free-tier-deployment) for why the model id matters and how to change it)  
 **Frontend:** Flutter (Dart), Chrome target  
 **Infrastructure:** Docker, Git, Linux  
 
 ## Architecture Overview
 
-The AI pipeline follows a RAG (Retrieval-Augmented Generation) flow:
-
 1. User uploads a legal document (PDF or image)
-2. Document is chunked and converted into vector embeddings
-3. Embeddings are stored in a vector store (FAISS locally, Qdrant in production, pgvector for hybrid queries)
-4. On user query, relevant chunks are retrieved via semantic similarity search
-5. Retrieved context is passed to an LLM (via OpenRouter) with a structured prompt via LangChain/LlamaIndex
-6. LLM returns a structured response: case summary, extracted entities, urgency signals, and next-step guidance
-7. Optional: LoRA/QLoRA fine-tuning adapters can be trained and wired into the serving path for domain-specific legal language
+2. Text is extracted (`pdfplumber`/`pymupdf`) and, for follow-up Q&A, embedded with fastembed and stored alongside the document row in Postgres
+3. On a follow-up question, the query is embedded the same way and matched against stored document embeddings via cosine/dot-product similarity — a straightforward in-process search rather than a separate retrieval service
+4. Extracted text and retrieved context are passed to the LLM (via OpenRouter) with a structured prompt asking for a specific JSON shape
+5. The LLM's response is parsed into a case summary, extracted entities (parties, deadlines, amounts, obligations, risks), urgency signals, and next-step guidance
+
+This is intentionally simple. There's a `_build_llamaindex_index` hook in `document_intelligence_service.py` left over from an earlier attempt at wiring in LlamaIndex for retrieval, but `llama-index` isn't in `requirements.txt` and the hook is stubbed to return `None` — worth knowing if you're reading the code and wondering why it's there. The numpy-dot-product approach it replaced turned out to be enough for the current scale.
 
 ## What Clients Can Do
 
@@ -109,45 +103,7 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 Create a `.env` file inside `backend/` with the required database and API key settings.
 
-Once the backend is running, you can verify service and database readiness at `http://localhost:8000/health`. The root `/` route still returns a lightweight OK response.
-
-Optional MLOps settings:
-
-- `MLOPS_ENABLED=true|false`
-- `MLFLOW_ENABLED=true|false`
-- `MLFLOW_TRACKING_URI` for a local or remote MLflow server
-- `MLFLOW_EXPERIMENT_NAME`
-- `WANDB_ENABLED=true|false`
-- `WANDB_PROJECT`
-- `WANDB_ENTITY`
-- `WANDB_MODE` such as `offline` or `disabled`
-
-The default backend config lives in `backend/conf/mlops.yaml`. Tracking is local and non-invasive unless you enable the environment flags above.
-
-### Optional LoRA / QLoRA Fine-Tuning
-
-AdvocateAI now includes a standalone adapter-training script for a one-time GPU run. It is separate from the production backend path, so the app will still use its normal inference flow unless you wire the saved adapter into serving.
-
-Install the extra training dependencies on the GPU server:
-
-```bash
-pip install -r requirements-lora.txt
-```
-
-Run the training script from the repository root:
-
-```bash
-python backend/train_lora.py --dataset path/to/training_data.jsonl --output-dir artifacts/lora_adapter --use-qlora
-```
-
-The dataset can be JSON or JSONL and should contain one of these shapes per record:
-
-- `messages` with chat-style `{role, content}` entries
-- `prompt` and `response`
-- `instruction`, optional `input`, and `output`
-- plain `text`
-
-The script saves the adapter under `artifacts/lora_adapter/adapter` and writes a training manifest with the exact settings used. If you want to make the claim that LoRA/QLoRA fine-tuning was done, run this script and keep the saved artifacts or manifest as evidence.
+Once the backend is running, you can verify service and database readiness at `http://localhost:8000/health` — it also reports whether the configured OpenRouter model is actually reachable, which is the fastest way to tell "the backend is up" apart from "the backend is up but the LLM call will fail." The root `/` route still returns a lightweight OK response.
 
 ### Frontend
 
@@ -213,15 +169,6 @@ Optional GitHub Secrets:
 - `LLM_BRIEF_TIMEOUT`
 - `LLM_CHAT_TIMEOUT`
 - `LLM_DOCUMENT_TIMEOUT`
-- `MLOPS_ENABLED`
-- `MLOPS_LOG_PROMPTS`
-- `MLFLOW_ENABLED`
-- `MLFLOW_TRACKING_URI`
-- `MLFLOW_EXPERIMENT_NAME`
-- `WANDB_ENABLED`
-- `WANDB_PROJECT`
-- `WANDB_ENTITY`
-- `WANDB_MODE`
 
 ## Free-Tier Deployment
 
