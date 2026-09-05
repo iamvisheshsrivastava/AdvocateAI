@@ -21,8 +21,8 @@ def get_ai_config() -> AIConfig:
             return default
 
     return AIConfig(
-        llm_model=os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-20b:free"),
-        llm_vision_model=os.getenv("OPENROUTER_VISION_MODEL", "google/gemma-4-31b-it:free"),
+        llm_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-4.6"),
+        llm_vision_model=os.getenv("OPENROUTER_VISION_MODEL", "z-ai/glm-4.6v"),
         default_timeout_seconds=_int("LLM_DEFAULT_TIMEOUT", 20),
         analysis_timeout_seconds=_int("LLM_ANALYSIS_TIMEOUT", 35),
         brief_timeout_seconds=_int("LLM_BRIEF_TIMEOUT", 25),
