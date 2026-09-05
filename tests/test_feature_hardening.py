@@ -18,7 +18,7 @@ def test_legal_action_guide_falls_back_for_unknown_issue(monkeypatch):
     monkeypatch.setattr(legal_action_service, "LEGAL_ACTIONS", {})
     monkeypatch.setattr(legal_action_service.cache_service, "get", lambda _key: None)
     monkeypatch.setattr(legal_action_service.cache_service, "set", lambda *args, **kwargs: None)
-    monkeypatch.setattr(legal_action_service, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(legal_action_service, "OPENROUTER_API_KEY", None)
 
     guide = legal_action_service.build_legal_action_guide("something unusual happened")
 
