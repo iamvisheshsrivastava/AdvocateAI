@@ -123,8 +123,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   Future<void> _loadNotifications({bool markAsRead = false}) async {
     try {
+      final headers = await ApiConfig.authHeaders();
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}/notifications?user_id=${widget.userId}'),
+        headers: headers,
       );
 
       if (!mounted) return;
@@ -140,7 +142,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         if (markAsRead && items.any((item) => item['is_read'] == false)) {
           await http.post(
             Uri.parse('${ApiConfig.baseUrl}/notifications/read'),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: jsonEncode({'user_id': widget.userId}),
           );
         }
@@ -270,6 +272,7 @@ class _NotificationBellActionState extends State<NotificationBellAction> {
     try {
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}/notifications?user_id=${widget.userId}'),
+        headers: await ApiConfig.authHeaders(),
       );
       if (!mounted || response.statusCode != 200) return;
       final data = jsonDecode(response.body) as Map<String, dynamic>;

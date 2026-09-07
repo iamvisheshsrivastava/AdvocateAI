@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from auth_utils import create_access_token
 from errors import AppError
 from app import app as backend_app
 from routers.notifications import router as notifications_router
@@ -57,13 +58,38 @@ def test_notifications_router_handles_service_failures(monkeypatch):
     app.include_router(notifications_router)
     client = TestClient(app)
 
-    response = client.get("/notifications", params={"user_id": 1})
+    token = create_access_token(user_id=1, role="client", email="user1@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get("/notifications", params={"user_id": 1}, headers=headers)
     assert response.status_code == 200
     assert response.json() == {"items": [], "unread_count": 0}
 
-    response = client.post("/notifications/read", json={"user_id": 1, "notification_ids": [1, 2]})
+    response = client.post(
+        "/notifications/read",
+        json={"user_id": 1, "notification_ids": [1, 2]},
+        headers=headers,
+    )
     assert response.status_code == 200
     assert response.json() == {"success": False}
+
+
+def test_notifications_router_rejects_cross_user_access(monkeypatch):
+    monkeypatch.setattr("routers.notifications.get_notifications", _raise_runtime_error)
+    monkeypatch.setattr("routers.notifications.mark_notifications_read", _raise_runtime_error)
+
+    app = FastAPI()
+    app.include_router(notifications_router)
+    client = TestClient(app)
+
+    token = create_access_token(user_id=1, role="client", email="user1@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get("/notifications", params={"user_id": 2}, headers=headers)
+    assert response.status_code == 403
+
+    response = client.get("/notifications", params={"user_id": 1})
+    assert response.status_code == 401
 
 
 
