@@ -1,5 +1,9 @@
 import os
+import threading
+from contextlib import contextmanager
+
 import psycopg2
+from psycopg2 import pool as pg_pool
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,13 +11,18 @@ load_dotenv()
 LEGAL_DEFAULT_ROLE = "client"
 
 
-def get_db_connection():
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def _connect_kwargs() -> dict:
+    return {"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "3"))}
+
+
+def _raw_connect():
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        return psycopg2.connect(
-            database_url,
-            connect_timeout=int(os.getenv("DB_CONNECT_TIMEOUT", "3")),
-        )
+        return psycopg2.connect(database_url, **_connect_kwargs())
 
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
@@ -21,8 +30,95 @@ def get_db_connection():
         user=os.getenv("DB_USER", "postgres"),
         password=os.getenv("DB_PASSWORD", "postgres"),
         port=int(os.getenv("DB_PORT", "5432")),
-        connect_timeout=int(os.getenv("DB_CONNECT_TIMEOUT", "3")),
+        **_connect_kwargs(),
     )
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = pg_pool.ThreadedConnectionPool(
+                    1, int(os.getenv("DB_POOL_MAX", "10")), _raw_connect
+                )
+    return _pool
+
+
+class PooledConnection:
+    """Proxy around a psycopg2 connection.
+
+    close() (or garbage collection, if a code path forgot to call it, e.g. after
+    an exception) rolls back and returns the connection to the pool instead of
+    leaking it.
+    """
+
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return self._conn.__exit__(exc_type, exc, tb)
+
+    def close(self):
+        conn, pool = self._conn, self._pool
+        if conn is None:
+            return
+        self._conn = None
+        try:
+            if pool is None or conn.closed:
+                if not conn.closed:
+                    conn.close()
+                if pool is not None:
+                    pool.putconn(conn, close=True)
+                return
+            conn.rollback()
+            pool.putconn(conn)
+        except Exception:
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def get_db_connection():
+    """Return a pooled connection; falls back to a direct one if the pool is exhausted."""
+    try:
+        pool = _get_pool()
+        conn = pool.getconn()
+    except pg_pool.PoolError:
+        return _raw_connect()
+    if conn.closed:
+        pool.putconn(conn, close=True)
+        return _raw_connect()
+    return PooledConnection(conn, pool)
+
+
+@contextmanager
+def db_connection():
+    """Context manager: commits on success, rolls back on error, always releases."""
+    conn = get_db_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def run_startup_migrations():

@@ -16,6 +16,32 @@ router = APIRouter(tags=["documents"])
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file
 
+ALLOWED_UPLOAD_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".png": {"image/png"},
+    ".jpg": {"image/jpeg"},
+    ".jpeg": {"image/jpeg"},
+}
+_GENERIC_MIME = {"", "application/octet-stream"}
+
+
+def _validate_upload_type(filename: str, content_type: str | None, data: bytes) -> None:
+    """Reject files whose extension, declared MIME type or magic bytes are not allowed."""
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    allowed_mimes = ALLOWED_UPLOAD_TYPES.get(ext)
+    declared = (content_type or "").split(";")[0].strip().lower()
+    if allowed_mimes is None or (declared not in _GENERIC_MIME and declared not in allowed_mimes):
+        raise HTTPException(status_code=415, detail=f"'{filename}' is not a supported file type.")
+    magic_ok = True
+    if ext == ".pdf":
+        magic_ok = data.lstrip()[:5] == b"%PDF-"
+    elif ext == ".png":
+        magic_ok = data.startswith(b"\x89PNG\r\n\x1a\n")
+    elif ext in (".jpg", ".jpeg"):
+        magic_ok = data.startswith(b"\xff\xd8\xff")
+    if not magic_ok:
+        raise HTTPException(status_code=415, detail=f"'{filename}' content does not match its file type.")
+
 
 def _rate_limit_actor_key(request: Request, current_user: dict | None) -> str:
     # Rate limiting must be keyed on something the caller can't spoof.
@@ -61,6 +87,7 @@ async def analyze_uploaded_document(
                 )
             if not file_bytes:
                 continue
+            _validate_upload_type(upload.filename or "document", upload.content_type, file_bytes)
             payloads.append((upload.filename or "document", upload.content_type, file_bytes))
 
         if not payloads:
