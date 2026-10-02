@@ -549,6 +549,18 @@ async def apply_to_case(data: CaseApplyRequest, current_user: dict = Depends(get
         return {"success": False, "message": "Case is not open for applications."}
 
     cur.execute(
+        "SELECT 1 FROM case_applications WHERE case_id = %s AND status = 'accepted'",
+        (data.case_id,),
+    )
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return {
+            "success": False,
+            "message": "This case already has an accepted lawyer and is no longer accepting applications.",
+        }
+
+    cur.execute(
         """
         INSERT INTO case_applications (case_id, lawyer_id, message, status)
         VALUES (%s, %s, %s, %s)
@@ -640,6 +652,22 @@ async def decide_case_application(
 
     target_lawyer_id = int(current_application[0])
     previous_status = str(current_application[1] or "submitted").strip().lower()
+
+    if previous_status != "accepted":
+        cur.execute(
+            """
+            SELECT 1 FROM case_applications
+            WHERE case_id = %s AND status = 'accepted' AND id <> %s
+            """,
+            (case_id, application_id),
+        )
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return {
+                "success": False,
+                "message": "This case already has an accepted lawyer; no further applications can be reviewed.",
+            }
 
     cur.execute(
         """

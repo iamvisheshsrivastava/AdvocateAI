@@ -34,6 +34,38 @@ async def _authenticate(websocket: WebSocket) -> dict | None:
         return None
 
 
+def _case_participants(case_id: int) -> set[int] | None:
+    """Return the set of user_ids allowed to send/receive messages on case_id.
+
+    Mirrors the REST POST /messages/send validation: the case's client plus
+    every lawyer who has applied to it (regardless of application status).
+    Returns None if the case does not exist.
+    """
+    conn = cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT client_id FROM cases WHERE case_id = %s", (case_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        client_id = row[0]
+        cur.execute(
+            "SELECT lawyer_id FROM case_applications WHERE case_id = %s",
+            (case_id,),
+        )
+        applicant_ids = {r[0] for r in cur.fetchall()}
+        return {client_id} | applicant_ids
+    except Exception:
+        logger.exception("Failed to load case participants case_id=%s", case_id)
+        return None
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
 def _case_membership(case_id: int, user_id: int) -> bool:
     """True if user_id is the client on case_id, or the accepted lawyer for it."""
     conn = cur = None
@@ -112,6 +144,20 @@ async def case_socket(websocket: WebSocket, case_id: int, user_id: int):
                 content = str(data.get("content", "")).strip()
                 receiver_id = data.get("receiver_id")
                 if not content or not receiver_id:
+                    continue
+
+                try:
+                    receiver_id = int(receiver_id)
+                except (TypeError, ValueError):
+                    continue
+
+                participants = _case_participants(case_id)
+                if participants is None or receiver_id not in participants or user_id not in participants:
+                    logger.warning(
+                        "Rejected case websocket message: receiver_id=%s not a participant on case_id=%s",
+                        receiver_id,
+                        case_id,
+                    )
                     continue
 
                 conn = cur = None
