@@ -34,62 +34,72 @@ def refresh_lawyer_responsiveness(
     response_time_hours: float | None = None,
 ):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT response_time_hours, applications_sent, cases_accepted
-        FROM lawyer_profiles
-        WHERE lawyer_id = %s
-        """,
-        (lawyer_id,),
-    )
-    row = cur.fetchone()
-    if not row:
-        cur.close()
+    try:
+        cur = conn.cursor()
+        try:
+            # Lock the row for the duration of this transaction so concurrent
+            # callers (REST + WebSocket paths) serialize on the same lawyer
+            # instead of racing a read-modify-write against each other.
+            cur.execute(
+                """
+                SELECT response_time_hours, applications_sent, cases_accepted
+                FROM lawyer_profiles
+                WHERE lawyer_id = %s
+                FOR UPDATE
+                """,
+                (lawyer_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.rollback()
+                return
+
+            current_response_time = float(row[0] or 0.0)
+            applications_sent = int(row[1] or 0)
+            cases_accepted = int(row[2] or 0)
+
+            if increment_applications:
+                applications_sent += 1
+            if increment_cases_accepted:
+                cases_accepted += 1
+            if response_time_hours is not None:
+                if current_response_time > 0:
+                    current_response_time = round((current_response_time + response_time_hours) / 2.0, 4)
+                else:
+                    current_response_time = round(response_time_hours, 4)
+
+            responsiveness_score = _compute_responsiveness_score(
+                current_response_time,
+                applications_sent,
+                cases_accepted,
+            )
+
+            cur.execute(
+                """
+                UPDATE lawyer_profiles
+                SET response_time_hours = %s,
+                    applications_sent = %s,
+                    cases_accepted = %s,
+                    responsiveness_score = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE lawyer_id = %s
+                """,
+                (
+                    current_response_time,
+                    applications_sent,
+                    cases_accepted,
+                    responsiveness_score,
+                    lawyer_id,
+                ),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+    finally:
         conn.close()
-        return
-
-    current_response_time = float(row[0] or 0.0)
-    applications_sent = int(row[1] or 0)
-    cases_accepted = int(row[2] or 0)
-
-    if increment_applications:
-        applications_sent += 1
-    if increment_cases_accepted:
-        cases_accepted += 1
-    if response_time_hours is not None:
-        if current_response_time > 0:
-            current_response_time = round((current_response_time + response_time_hours) / 2.0, 4)
-        else:
-            current_response_time = round(response_time_hours, 4)
-
-    responsiveness_score = _compute_responsiveness_score(
-        current_response_time,
-        applications_sent,
-        cases_accepted,
-    )
-
-    cur.execute(
-        """
-        UPDATE lawyer_profiles
-        SET response_time_hours = %s,
-            applications_sent = %s,
-            cases_accepted = %s,
-            responsiveness_score = %s,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE lawyer_id = %s
-        """,
-        (
-            current_response_time,
-            applications_sent,
-            cases_accepted,
-            responsiveness_score,
-            lawyer_id,
-        ),
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
 
 
 def _build_match_reason(
