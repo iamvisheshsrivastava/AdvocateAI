@@ -19,7 +19,7 @@ _LOCAL_USERS_LOCK = Lock()
 
 def _normalize_role(role: str | None) -> str:
     normalized = (role or "client").strip().lower()
-    return normalized if normalized in ("client", "lawyer", "admin") else "client"
+    return normalized if normalized in ("client", "lawyer") else "client"
 
 
 def _load_local_users() -> list[dict]:
