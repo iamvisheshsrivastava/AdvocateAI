@@ -1,4 +1,18 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
+
+
+class AvailabilitySlotRequest(BaseModel):
+    lawyer_id: int
+    start_time: datetime
+    end_time: datetime
+
+
+class BookingRequest(BaseModel):
+    slot_id: int
+    client_id: int
+    case_id: int
 
 
 class LawyerProfileRequest(BaseModel):
