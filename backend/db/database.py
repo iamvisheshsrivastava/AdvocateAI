@@ -142,6 +142,10 @@ def run_startup_migrations():
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'client'")
     cur.execute("UPDATE users SET role = 'client' WHERE role IS NULL")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_tier TEXT DEFAULT 'free'")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'inactive'")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT")
+    cur.execute("UPDATE users SET subscription_tier = 'free' WHERE subscription_tier IS NULL")
 
     cur.execute(
         """
@@ -287,6 +291,36 @@ def run_startup_migrations():
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS lawyer_availability_slots (
+            id SERIAL PRIMARY KEY,
+            lawyer_id INT REFERENCES users(id) ON DELETE CASCADE,
+            start_time TIMESTAMP NOT NULL,
+            end_time TIMESTAMP NOT NULL,
+            is_booked BOOLEAN DEFAULT FALSE,
+            case_id INT REFERENCES cases(case_id) ON DELETE SET NULL,
+            client_id INT REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cur.execute("ALTER TABLE lawyer_availability_slots ADD COLUMN IF NOT EXISTS client_id INT REFERENCES users(id) ON DELETE SET NULL")
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deadline_reminders_sent (
+            id SERIAL PRIMARY KEY,
+            case_id INT REFERENCES cases(case_id) ON DELETE CASCADE,
+            deadline_key TEXT NOT NULL,
+            threshold TEXT NOT NULL,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (case_id, deadline_key, threshold)
+        )
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS watchlist (
             id SERIAL PRIMARY KEY,
             user_id INT REFERENCES users(id) ON DELETE CASCADE,
@@ -318,6 +352,9 @@ def run_startup_migrations():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read_state ON notifications(user_id, is_read)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_availability_slots_lawyer_id ON lawyer_availability_slots(lawyer_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_availability_slots_is_booked ON lawyer_availability_slots(is_booked)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_deadline_reminders_case_id ON deadline_reminders_sent(case_id)")
 
     conn.commit()
     cur.close()
