@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 import logging
 import os
@@ -19,7 +20,9 @@ from routers.lawyers import router as lawyers_router
 from routers.legal_actions import router as legal_actions_router
 from routers.messages import router as messages_router
 from routers.notifications import router as notifications_router
+from routers.payments import router as payments_router
 from routers.realtime import router as realtime_router
+from services.deadline_reminder_service import scan_and_notify_deadlines
 
 configure_logging()
 logger = get_logger(__name__)
@@ -51,12 +54,39 @@ app.add_middleware(
 )
 
 
+_DEADLINE_SCAN_INTERVAL_SECONDS = int(os.getenv("DEADLINE_SCAN_INTERVAL_SECONDS", "3600"))
+_deadline_scan_task: "asyncio.Task | None" = None
+
+
+async def _deadline_scan_loop() -> None:
+    while True:
+        try:
+            sent = scan_and_notify_deadlines()
+            if sent:
+                logger.info("Deadline reminder scan sent %d notification(s)", sent)
+        except Exception:
+            logger.exception("Deadline reminder scan failed")
+        await asyncio.sleep(_DEADLINE_SCAN_INTERVAL_SECONDS)
+
+
 @app.on_event("startup")
 async def on_startup():
     try:
         run_startup_migrations()
     except Exception as exc:
         logger.exception("Startup migrations skipped: %s", exc)
+
+    # Skip the background scheduler under pytest so test runs don't leak a
+    # perpetually-sleeping task across the suite.
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        global _deadline_scan_task
+        _deadline_scan_task = asyncio.create_task(_deadline_scan_loop())
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    if _deadline_scan_task is not None:
+        _deadline_scan_task.cancel()
 
 
 def _check_database_connection() -> tuple[bool, str | None]:
@@ -84,6 +114,7 @@ app.include_router(documents_router)
 app.include_router(legal_actions_router)
 app.include_router(messages_router)
 app.include_router(notifications_router)
+app.include_router(payments_router)
 app.include_router(realtime_router)
 
 
