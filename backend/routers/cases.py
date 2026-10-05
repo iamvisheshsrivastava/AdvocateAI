@@ -3,6 +3,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from auth_utils import get_current_user
 from db.database import get_db_connection
 from logging_config import get_logger
@@ -19,6 +20,7 @@ from services.ai_service import analyze_legal_problem, build_case_brief, LEGAL_D
 from services.case_intelligence_service import build_case_intelligence
 from services.matching_service import rank_lawyers, refresh_lawyer_responsiveness
 from services.notification_service import create_notification
+from services.pdf_export_service import render_consultation_packet
 
 router = APIRouter(tags=["cases"])
 USER_ROLE_QUERY = "SELECT COALESCE(role, 'client') FROM users WHERE id = %s"
@@ -486,6 +488,32 @@ async def get_case_detail(case_id: int, current_user: dict = Depends(get_current
     payload["accepted_lawyer_id"] = _get_accepted_lawyer_id(case_id)
     payload["case_intelligence"] = _build_case_intelligence_from_row(row)
     return payload
+
+
+@router.get("/cases/{case_id}/consultation-packet.pdf")
+async def get_consultation_packet(case_id: int, current_user: dict = Depends(get_current_user)):
+    row = _fetch_case_row(case_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    payload = _case_row_to_dict(row)
+    user_id = int(current_user.get("sub"))
+    if not _is_case_participant(case_id, user_id, payload["client_id"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the case owner or a lawyer who applied to this case can export it.",
+        )
+
+    case_intelligence = _build_case_intelligence_from_row(row)
+    pdf_bytes = render_consultation_packet(payload, case_intelligence)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="case-{case_id}-consultation-packet.pdf"'
+        },
+    )
 
 
 @router.get("/cases/{case_id}/insights")
