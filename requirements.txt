@@ -16,3 +16,5 @@ python-jose[cryptography]
 pytest
 httpx
 pytest-asyncio
+fpdf2
+stripe
