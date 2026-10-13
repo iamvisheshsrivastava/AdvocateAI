@@ -16,6 +16,11 @@ RUN pip install --upgrade pip \
 
 COPY backend /app
 
+RUN useradd --create-home --uid 1000 appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
