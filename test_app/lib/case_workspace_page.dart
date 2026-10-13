@@ -33,6 +33,8 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   List<Map<String, dynamic>> contacts = [];
   int? selectedReceiverId;
   bool isLoading = true;
+  bool hasLoadError = false;
+  String loadErrorMessage = '';
   bool isSending = false;
   bool isAddingEvent = false;
   bool isClosingCase = false;
@@ -61,17 +63,31 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
   }
 
   Future<void> _loadWorkspace() async {
-    setState(() => isLoading = true);
-    await Future.wait([
-      _loadCaseDetail(),
-      _loadCaseIntelligence(),
-      _loadMessages(),
-      _loadTimeline(),
-      _loadApplications(),
-      _loadNotificationsTargets(),
-    ]);
-    if (!mounted) return;
-    setState(() => isLoading = false);
+    setState(() {
+      isLoading = true;
+      hasLoadError = false;
+      loadErrorMessage = '';
+    });
+    try {
+      await Future.wait([
+        _loadCaseDetail(),
+        _loadCaseIntelligence(),
+        _loadMessages(),
+        _loadTimeline(),
+        _loadApplications(),
+        _loadNotificationsTargets(),
+      ]);
+      if (!mounted) return;
+      setState(() => isLoading = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        hasLoadError = true;
+        loadErrorMessage = 'Could not load this case. Please check your '
+            'connection and try again.';
+      });
+    }
   }
 
   Future<void> _loadCaseIntelligence() async {
@@ -460,7 +476,32 @@ class _CaseWorkspacePageState extends State<CaseWorkspacePage> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
+          : hasLoadError
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                        const SizedBox(height: 16),
+                        Text(
+                          loadErrorMessage.isEmpty
+                              ? 'Something went wrong while loading this case.'
+                              : loadErrorMessage,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadWorkspace,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
               onRefresh: _loadWorkspace,
               child: ListView(
                 padding: const EdgeInsets.all(16),
