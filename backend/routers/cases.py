@@ -356,6 +356,10 @@ async def get_open_cases(limit: Annotated[int, Query(ge=1, le=100)] = 100, offse
                c.ai_summary, c.urgency, c.city, c.created_at, c.status
         FROM cases c
         WHERE c.status = 'open' AND c.is_public = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM case_applications ca
+              WHERE ca.case_id = c.case_id AND ca.status = 'accepted'
+          )
         ORDER BY c.created_at DESC
         LIMIT %s OFFSET %s
         """,
@@ -409,8 +413,12 @@ async def get_recommended_cases_for_lawyer(
         """
         SELECT case_id, client_id, title, description, legal_area, issue_type, ai_summary, urgency,
                city, created_at, status
-        FROM cases
+        FROM cases c
         WHERE status = 'open' AND is_public = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM case_applications ca
+              WHERE ca.case_id = c.case_id AND ca.status = 'accepted'
+          )
         ORDER BY created_at DESC
         LIMIT 500
         """

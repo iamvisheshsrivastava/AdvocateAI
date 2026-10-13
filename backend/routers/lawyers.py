@@ -376,17 +376,18 @@ async def book_availability_slot(data: BookingRequest, current_user: dict = Depe
             conn.rollback()
             return {"success": False, "message": "This slot has already been booked."}
 
-        # The lawyer who owns the slot must actually be connected to this case
-        # (applied/accepted) -- reuse the same ownership check as the case.
+        # The lawyer who owns the slot must have an *accepted* application for
+        # this case -- a rejected or still-pending applicant must not be
+        # bookable (see issue #30).
         cur.execute(
-            "SELECT 1 FROM case_applications WHERE case_id = %s AND lawyer_id = %s",
+            "SELECT 1 FROM case_applications WHERE case_id = %s AND lawyer_id = %s AND status = 'accepted'",
             (data.case_id, lawyer_id),
         )
         if cur.fetchone() is None:
             conn.rollback()
             return {
                 "success": False,
-                "message": "This lawyer has not applied to the case you specified.",
+                "message": "This lawyer has not been accepted for the case you specified.",
             }
 
         cur.execute(
