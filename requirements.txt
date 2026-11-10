@@ -6,7 +6,7 @@ pydantic[email]==2.13.3
 python-dotenv==1.2.2
 requests==2.33.1
 pdfplumber==0.11.9
-python-multipart==0.0.27
+python-multipart==0.0.33
 redis==7.4.0
 pymupdf==1.27.2.3
 scikit-learn==1.8.0
