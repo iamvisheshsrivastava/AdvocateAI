@@ -5,7 +5,7 @@ fastembed==0.9.0
 pydantic[email]==2.13.3
 python-dotenv==1.2.2
 requests==2.33.1
-pdfplumber==0.11.9
+pdfplumber==0.11.10
 python-multipart==0.0.27
 redis==7.4.0
 pymupdf==1.27.2.3
