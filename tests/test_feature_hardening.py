@@ -93,6 +93,53 @@ def test_notifications_router_rejects_cross_user_access(monkeypatch):
 
 
 
+# ---------------------------------------------------------------------------
+# Issue #36: signup must enforce the same 6-character password minimum the
+# Flutter frontend enforces (test_app/lib/signup_page.dart) -- the backend is
+# the actual security boundary, so it must reject short passwords itself.
+# ---------------------------------------------------------------------------
+
+
+def test_signup_rejects_password_shorter_than_six_characters():
+    client = TestClient(backend_app)
+
+    response = client.post(
+        "/signup",
+        json={"username": "short-pw-user", "password": "abc12"},  # ggignore -- test fixture, not a real credential
+    )
+
+    assert response.status_code == 422
+
+
+def test_signup_accepts_password_of_exactly_six_characters(monkeypatch):
+    from routers import auth as auth_router
+
+    monkeypatch.setattr(
+        auth_router,
+        "get_db_connection",
+        _raise_runtime_error,
+    )
+    monkeypatch.setattr(
+        auth_router,
+        "_create_local_user",
+        lambda username, password, email, role: {
+            "id": 1,
+            "name": username,
+            "email": email,
+            "role": role,
+        },
+    )
+    client = TestClient(backend_app)
+
+    response = client.post(
+        "/signup",
+        json={"username": "exact-six-user", "password": "abcdef"},  # ggignore -- test fixture, not a real credential
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
 def test_app_error_serializes_cleanly():
     app = FastAPI()
 
