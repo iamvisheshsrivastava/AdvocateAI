@@ -105,7 +105,7 @@ def test_signup_rejects_password_shorter_than_six_characters():
 
     response = client.post(
         "/signup",
-        json={"username": "short-pw-user", "password": "abc12"},
+        json={"username": "short-pw-user", "password": "abc12"},  # ggignore -- test fixture, not a real credential
     )
 
     assert response.status_code == 422
@@ -133,7 +133,7 @@ def test_signup_accepts_password_of_exactly_six_characters(monkeypatch):
 
     response = client.post(
         "/signup",
-        json={"username": "exact-six-user", "password": "abcdef"},
+        json={"username": "exact-six-user", "password": "abcdef"},  # ggignore -- test fixture, not a real credential
     )
 
     assert response.status_code == 200
