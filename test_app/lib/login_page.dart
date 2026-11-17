@@ -9,7 +9,7 @@ import 'role_home_page.dart';
 import 'signup_page.dart';
 import 'theme.dart';
 
-Future<Map<String, dynamic>?> loginUser(
+Future<Map<String, dynamic>> loginUser(
     String username, String password) async {
   try {
     final res = await http
@@ -22,10 +22,18 @@ Future<Map<String, dynamic>?> loginUser(
 
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
-      if (data['success'] == true) return data as Map<String, dynamic>;
+      if (data is Map<String, dynamic>) return data;
     }
-  } catch (_) {}
-  return null;
+  } catch (_) {
+    // Timeout, DNS failure, server unreachable, etc. -- distinct from an
+    // actual 'success: false' response from the backend (#37).
+    return {
+      'success': false,
+      'message':
+          'Unable to reach the server. Please check your connection and try again.',
+    };
+  }
+  return {'success': false, 'message': 'Incorrect username or password.'};
 }
 
 class LoginPage extends StatefulWidget {
@@ -84,7 +92,7 @@ class _LoginPageState extends State<LoginPage>
       final data = await loginUser(username, password);
       if (!mounted) return;
 
-      if (data != null) {
+      if (data['success'] == true) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('access_token', data['access_token'] ?? '');
         await prefs.setInt('user_id', data['user_id'] ?? 0);
@@ -103,7 +111,8 @@ class _LoginPageState extends State<LoginPage>
           ),
         );
       } else {
-        setState(() => _error = 'Incorrect username or password.');
+        setState(() => _error =
+            data['message']?.toString() ?? 'Incorrect username or password.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
